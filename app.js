@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v18";
+  const APP_VERSION = "v19";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -67,18 +67,6 @@
     const url = URL.createObjectURL(blob), a = document.createElement("a");
     a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
-  }
-  // 공유 창으로 저장할 곳(파일 앱·아이클라우드·카톡 등)을 고르게. 안 되면 그냥 내려받기.
-  async function shareOrDownload(blob, name, text) {
-    try {
-      const file = new File([blob], name, { type: blob.type || "application/octet-stream" });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: name, text: text || name });
-        return "shared";
-      }
-    } catch (e) { if (e && e.name === "AbortError") return "cancel"; }
-    downloadBlob(blob, name);
-    return "download";
   }
 
   /* ================= 아기 이름 ================= */
@@ -308,15 +296,46 @@
     await dbDelete(curKey()); state.saved.delete(curKey()); toast("지웠어요"); refreshDock();
   }
   /* ================= 전체 백업 / 복원 ================= */
-  async function backupAll() {
-    const all = await dbAll();
-    if (!all.length) { toast("백업할 녹음이 없어요"); return; }
-    const items = [];
-    for (const rec of all) items.push({ key: rec.key, scriptId: rec.scriptId, voice: rec.voice, mime: rec.mime, createdAt: rec.createdAt, data: await blobToDataURL(rec.blob) });
-    const payload = { app: "별밤책", version: 1, exportedAt: Date.now(), recordings: items };
-    const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-    const res = await shareOrDownload(blob, "별밤책-백업.json", "별밤책 녹음 백업 파일이에요. 파일 앱이나 카톡(나에게)에 보관해 두세요.");
-    if (res !== "cancel") toast(all.length + "개 녹음을 백업했어요 🛟"); track("backup");
+  // 백업 파일을 모달 열 때 미리 만들어 둔다. → "보내기" 누르는 순간 지체 없이 공유창을 띄우려고.
+  //  (아이폰은 버튼 누른 '직후'에만 공유창을 허용해서, 공유 직전에 await가 끼면 창이 안 뜬다.)
+  //  카톡이 .json 을 거부하므로 .txt(text/plain)로 만든다(내용은 JSON 그대로).
+  let backupReady = null;     // { file, blob, count } | { empty:true } | null
+  let backupBuilding = false;
+  async function buildBackup() {
+    backupReady = null; backupBuilding = true; updateBackupHint();
+    try {
+      const all = await dbAll();
+      if (!all.length) { backupReady = { empty: true, count: 0 }; return; }
+      const items = [];
+      for (const rec of all) items.push({ key: rec.key, scriptId: rec.scriptId, voice: rec.voice, mime: rec.mime, createdAt: rec.createdAt, data: await blobToDataURL(rec.blob) });
+      const payload = { app: "별밤책", version: 1, exportedAt: Date.now(), recordings: items };
+      const blob = new Blob([JSON.stringify(payload)], { type: "text/plain" });
+      const file = new File([blob], "별밤책-백업.txt", { type: "text/plain" });
+      backupReady = { file, blob, count: all.length };
+    } finally { backupBuilding = false; updateBackupHint(); }
+  }
+  function updateBackupHint() {
+    const h = document.getElementById("backupHint"); if (!h) return;
+    if (backupBuilding || !backupReady) { h.textContent = "백업 파일을 준비하고 있어요…"; return; }
+    if (backupReady.empty) { h.textContent = "아직 백업할 녹음이 없어요."; return; }
+    h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음을 보낼 수 있어요.";
+  }
+  // 카톡/메일/드라이브 등으로 보내기. 공유창을 버튼 클릭 '즉시' 띄운다(중간 await 없음).
+  async function sendBackup() {
+    if (backupBuilding || !backupReady) { toast("백업을 준비하고 있어요. 잠깐 뒤 다시 눌러주세요"); return; }
+    if (backupReady.empty) { toast("백업할 녹음이 없어요"); return; }
+    const { file, blob, count } = backupReady;
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "별밤책 백업", text: "별밤책 녹음 백업 파일이에요. 카톡 '나에게'에 보관하면 폰을 바꿔도 안전해요." });
+        toast(count + "개 백업을 보냈어요 🛟  (카톡 ‘나에게’ 추천)"); track("backup"); return;
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") return;   // 사용자가 취소
+    }
+    // 공유가 안 되는 환경(일부 설치본 등): 파일로 저장 시도 + 안내
+    downloadBlob(blob, "별밤책-백업.txt");
+    toast("공유창이 안 떠서 파일로 저장했어요. 안 되면 사파리·크롬으로 열어 다시 해주세요");
   }
   async function restoreFromFile(file) {
     if (!file) return;
@@ -414,17 +433,29 @@
     openModal(`
       <div class="modal-body">
         <h2>녹음 백업 · 복원 🛟</h2>
-        <p>녹음은 이 기기 안에만 있어요. <b>백업</b>하면 모든 녹음을 <b>파일 하나</b>로 묶어요.
-        기기를 바꾸거나 실수로 지워져도, 그 파일로 <b>복원</b>하면 되살아나요.</p>
-        <button class="modal-btn gold" id="doBackup">📦 모든 녹음 백업하기</button>
+        <p>녹음은 이 기기 안에만 있어요. <b>카카오톡 ‘나에게 보내기’</b>로 백업해 두면,
+        폰을 바꾸거나 실수로 지워져도 카톡에서 다시 <b>복원</b>할 수 있어요.</p>
+
+        <button class="modal-btn gold" id="doBackup">💬 카카오톡으로 백업 보내기</button>
+        <p class="hint" id="backupHint">백업 파일을 준비하고 있어요…</p>
+        <ol class="steps">
+          <li>위 버튼을 누르면 <b>공유창</b>이 떠요</li>
+          <li><b>카카오톡</b> 선택 → <b>나에게 보내기</b>(내 채팅방)에 저장</li>
+        </ol>
+
+        <h3>📥 복원하기 (백업에서 되살리기)</h3>
+        <ol class="steps">
+          <li>카톡 <b>나에게</b>에서 <b>별밤책-백업.txt</b>를 눌러 → <b>공유 → “파일에 저장”</b></li>
+          <li>아래 버튼을 누르고, 방금 저장한 <b>별밤책-백업.txt</b>를 고르기</li>
+        </ol>
         <button class="modal-btn ghost" id="doRestore">📥 백업 파일에서 복원</button>
-        <h3>어디에 저장하나요?</h3>
-        <p>백업을 누르면 <b>저장할 곳을 고르는 창</b>이 떠요. <b>파일 앱 · 아이클라우드 · 카카오톡(나에게)</b> 등에 보관하세요.</p>
-        <p class="hint">※ 백업은 사진·영상이 아니라 <b>데이터 파일</b>이라 <b>사진첩(앨범)</b>엔 저장되지 않아요.</p>
-        <p class="hint"><b>카카오톡으로 보냈다면?</b> 카톡 대화방에서 <b>별밤책-백업.json</b>을 눌러 <b>공유 → "파일에 저장"</b>한 뒤, 위 <b>복원</b>에서 그 파일을 고르면 돼요.</p>
+
+        <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 백업이 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.
+        백업은 사진첩이 아니라 <b>파일</b>로 저장돼요.</p>
       </div>`);
-    $("doBackup").addEventListener("click", () => { backupAll(); });
+    $("doBackup").addEventListener("click", sendBackup);
     $("doRestore").addEventListener("click", () => restoreInput.click());
+    buildBackup();   // 모달 열자마자 파일 준비 → 버튼 누르는 즉시 공유창이 뜨게
   }
 
   // 카카오톡·인스타 등 '인앱 브라우저'인지 감지
