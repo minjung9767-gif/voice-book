@@ -1,0 +1,18 @@
+# Netlify 배포 설정
+# 이 저장소는 '우리 목소리 책' 앱 전용이라, 저장소 루트가 곧 사이트의 첫 화면이다.
+# 그래서 주소가 https://voice-book.netlify.app/ 로 바로 열린다.
+
+[build]
+  publish = "."
+  # 빌드 과정이 없는 순수 HTML/JS라 build command 는 필요 없음.
+
+# 서비스워커/매니페스트가 항상 최신으로 받아지도록 캐시를 짧게
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "no-cache"

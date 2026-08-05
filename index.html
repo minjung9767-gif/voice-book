@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#ff8aad" />
+  <meta name="description" content="엄마·아빠 목소리로 읽어주는 우리 아기 그림책. 녹음도 재생도 이 기기 안에서만." />
+  <title>우리 목소리 책 🎙️</title>
+
+  <!-- PWA / 홈화면 추가 -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="목소리책" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Jua&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== 홈 화면: 대본 목록 ===== -->
+  <section id="home" class="screen active">
+    <header class="home-head">
+      <h1 class="app-title">우리 목소리 책 <span aria-hidden="true">🎙️</span></h1>
+      <p class="app-sub">엄마·아빠 목소리로, 언제나 곁에서.</p>
+    </header>
+
+    <ul id="scriptList" class="script-list" aria-label="이야기 목록"></ul>
+
+    <p class="privacy-note">
+      🔒 녹음한 목소리는 <b>이 기기 안에만</b> 저장돼요. 밖으로 나가지 않아요.
+    </p>
+  </section>
+
+  <!-- ===== 이야기 화면: 대본 보기 · 녹음 · 재생 ===== -->
+  <section id="story" class="screen">
+    <header class="story-head">
+      <button id="backBtn" class="icon-btn" aria-label="뒤로">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <h2 id="storyTitle" class="story-title">이야기</h2>
+      <span class="head-spacer" aria-hidden="true"></span>
+    </header>
+
+    <!-- 누구 목소리인지 고르기 -->
+    <div class="voice-tabs" role="tablist" aria-label="목소리 고르기">
+      <button class="voice-tab active" data-voice="mom" role="tab">🌷 엄마</button>
+      <button class="voice-tab" data-voice="dad" role="tab">🌰 아빠</button>
+    </div>
+
+    <!-- 대본 -->
+    <div id="scriptBody" class="script-body"></div>
+
+    <!-- 녹음/재생 조작판 -->
+    <div class="dock">
+      <div id="dockStatus" class="dock-status"></div>
+      <div id="dockControls" class="dock-controls"></div>
+    </div>
+  </section>
+
+  <!-- 파일 불러오기용 숨은 input -->
+  <input type="file" id="importInput" accept="audio/*" hidden />
+
+  <!-- 토스트 -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="scripts-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
