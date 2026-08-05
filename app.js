@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v17";
+  const APP_VERSION = "v18";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",

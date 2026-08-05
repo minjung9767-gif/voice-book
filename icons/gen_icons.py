@@ -1,12 +1,21 @@
 """별밤책 - PWA 아이콘 생성 스크립트.
-밤하늘 네이비 배경 + 별 + 초승달 + 펼친 책(크림색).
-'녹음/마이크'가 아니라 '책' 느낌을 살렸다.
+밤하늘 네이비 배경 + 별 + '동화책 표지'(금색 테두리 + 큰 초승달·별 엠블럼).
+오른쪽 모서리에 페이지 결을 붙여 책 두께를 은은하게 표현.
 필요할 때 다시 실행하면 아이콘을 새로 만든다.
-사용: python3 gen_icons.py
+사용: python3 gen_icons.py   (Pillow 필요)
 """
-from PIL import Image, ImageDraw
+import math
+from PIL import Image, ImageDraw, ImageFilter
 
 SS = 4  # 슈퍼샘플링 배율 (선을 매끄럽게)
+
+NAVY_T = (78, 92, 168)    # 밤하늘 위 인디고
+NAVY_B = (22, 28, 70)     # 깊은 남색
+PLUM = (46, 40, 96)       # 책 표지
+SPINE = (34, 30, 74)      # 책등(어두운 남색)
+GOLD = (255, 214, 132)    # 금색 (테두리·달·별)
+CREAM = (248, 244, 233)   # 페이지 옆면
+PAGE_LINE = (206, 199, 180)  # 페이지 결 선
 
 
 def lerp(a, b, t):
@@ -14,9 +23,32 @@ def lerp(a, b, t):
 
 
 def paste_color(img, mask, color):
-    """알파 마스크(mask, 'L') 자리에 단색(color)을 그라데이션 위로 올린다."""
-    layer = Image.new("RGBA", img.size, color + (255,))
+    layer = Image.new("RGBA", img.size, tuple(color) + (255,))
     img.paste(layer, (0, 0), mask)
+
+
+def crescent_mask(S, cx, cy, r, cut=0.62, ang=0.0):
+    """초승달 알파 마스크: 원에서 살짝 비낀 원을 빼서 만든다."""
+    m = Image.new("L", (S, S), 0)
+    d = ImageDraw.Draw(m)
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
+    ox, oy = math.cos(ang) * r * cut, math.sin(ang) * r * cut
+    d.ellipse([cx - r + ox, cy - r + oy, cx + r + ox, cy + r + oy], fill=0)
+    return m
+
+
+def star_pts(cx, cy, r, inner=0.42, rot=-90):
+    return [(cx + (r if i % 2 == 0 else r * inner) * math.cos(math.radians(rot + i * 36)),
+             cy + (r if i % 2 == 0 else r * inner) * math.sin(math.radians(rot + i * 36)))
+            for i in range(10)]
+
+
+def soft_glow(img, draw_fn, blur, alpha):
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw_fn(ImageDraw.Draw(layer))
+    layer = layer.filter(ImageFilter.GaussianBlur(blur))
+    layer.putalpha(layer.split()[3].point(lambda p: p * alpha // 255))
+    img.alpha_composite(layer)
 
 
 def draw_icon(size, maskable=False):
@@ -24,84 +56,54 @@ def draw_icon(size, maskable=False):
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
-    top = (74, 86, 160)     # 밤하늘 인디고
-    bot = (22, 28, 68)      # 깊은 남색
+    # 배경 그라데이션
     for y in range(S):
-        d.line([(0, y), (S, y)], fill=lerp(top, bot, y / S))
+        d.line([(0, y), (S, y)], fill=lerp(NAVY_T, NAVY_B, y / S))
 
-    # 크림 책보다 콘텐츠를 살짝 작게(마스커블은 안전영역 확보)
-    scale = 0.80 if maskable else 0.94
     cx = S / 2
+    cs = 0.84 if maskable else 1.0   # 마스커블은 안전영역 위해 콘텐츠 축소
 
-    # ---- 작은 별들 (밤하늘 장식) ----
-    star = (255, 250, 225, 235)
-    for (sx, sy, sr) in [(0.20, 0.24, 0.014), (0.83, 0.22, 0.018),
-                         (0.72, 0.63, 0.013), (0.16, 0.66, 0.012),
-                         (0.30, 0.16, 0.010)]:
+    # 작은 별들
+    for (sx, sy, sr) in [(0.18, 0.16, 0.012), (0.84, 0.20, 0.013), (0.80, 0.82, 0.011)]:
         r = S * sr
-        d.ellipse([S * sx - r, S * sy - r, S * sx + r, S * sy + r], fill=star)
+        d.ellipse([S * sx - r, S * sy - r, S * sx + r, S * sy + r], fill=(255, 250, 228, 230))
 
-    cream = (247, 243, 232)   # 책 페이지 크림색
-    ink = (120, 132, 178)     # 페이지 위 글줄(은은한 남보라)
+    # ---- 책 표지 ----
+    bw, bh = S * 0.56 * cs, S * 0.66 * cs
+    x0, y0 = cx - bw / 2, S * 0.50 - bh / 2
+    d.rounded_rectangle([x0, y0, x0 + bw, y0 + bh], radius=int(S * 0.06 * cs), fill=PLUM)
+    # 책등(왼쪽)
+    d.rounded_rectangle([x0, y0, x0 + S * 0.05 * cs, y0 + bh], radius=int(S * 0.02 * cs), fill=SPINE)
+    # 금색 테두리
+    inset = S * 0.045 * cs
+    d.rounded_rectangle([x0 + inset, y0 + inset, x0 + bw - inset, y0 + bh - inset],
+                        radius=int(S * 0.04 * cs), outline=GOLD, width=max(3, int(S * 0.008 * cs)))
+    # 오른쪽 모서리 페이지 결 (표지에 붙은 얇은 크림 띠 + 결 선)
+    ew = S * 0.02 * cs
+    d.rounded_rectangle([x0 + bw - ew, y0 + S * 0.05 * cs, x0 + bw, y0 + bh - S * 0.05 * cs],
+                        radius=int(S * 0.008 * cs), fill=CREAM)
+    for fy in (0.22, 0.40, 0.58, 0.76):
+        yy = y0 + S * 0.05 * cs + (bh - S * 0.10 * cs) * fy
+        d.line([(x0 + bw - ew, yy), (x0 + bw, yy)], fill=PAGE_LINE, width=max(1, int(S * 0.004 * cs)))
 
-    # ---- 초승달 (책 위, 은은하게) ----
-    moon_mask = Image.new("L", (S, S), 0)
-    md = ImageDraw.Draw(moon_mask)
-    mx, my, mr = cx, S * (0.50 - 0.235 * scale), S * 0.075 * scale
-    md.ellipse([mx - mr, my - mr, mx + mr, my + mr], fill=255)
-    off = mr * 0.62
-    md.ellipse([mx - mr + off, my - mr - off * 0.2,
-                mx + mr + off, my + mr - off * 0.2], fill=0)  # 오른쪽을 파서 초승달
-    paste_color(img, moon_mask, (245, 240, 224))
+    # ---- 엠블럼: 큰 초승달 + 별 ----
+    mcx, mcy, mr = cx - S * 0.01 * cs, S * 0.50, S * 0.15 * cs
+    soft_glow(img, lambda g: g.ellipse([mcx - mr, mcy - mr, mcx + mr, mcy + mr], fill=GOLD + (255,)),
+              blur=S * 0.02, alpha=60)
+    paste_color(img, crescent_mask(S, mcx, mcy, mr, cut=0.62, ang=math.radians(-20)), GOLD)
+    d.polygon(star_pts(mcx + mr * 1.02, mcy - mr * 0.72, S * 0.042 * cs), fill=GOLD)
 
-    # ---- 펼친 책 ----
-    # 중심에서 살짝 벌어진 두 페이지. 위/아래가 스파인(중앙)으로 부드럽게 처짐.
-    w = S * 0.40 * scale          # 한 페이지 가로
-    gap = S * 0.018 * scale       # 중앙 스파인 틈
-    y_ct = S * (0.50 + 0.02 * scale)   # 중앙 위 (살짝 아래 → 계곡)
-    y_ot = S * (0.50 - 0.04 * scale)   # 바깥 위
-    y_ob = S * (0.50 + 0.24 * scale)   # 바깥 아래
-    y_cb = S * (0.50 + 0.30 * scale)   # 중앙 아래 (더 처짐 → 책이 벌어진 느낌)
-
-    left = [
-        (cx - gap, y_ct),
-        (cx - w, y_ot),
-        (cx - w, y_ob),
-        (cx - gap, y_cb),
-    ]
-    right = [(S - x, y) for (x, y) in left]  # 좌우 대칭
-
-    d.polygon(left, fill=cream)
-    d.polygon(right, fill=cream)
-
-    # 페이지 위 글줄 3개씩 (책 느낌)
-    lw = max(2, int(S * 0.012))
-    for i, fy in enumerate((0.30, 0.52, 0.74)):
-        # 각 페이지 안쪽에서 바깥쪽으로, 페이지 기울기에 맞춰 살짝 기울임
-        ty = y_ct + (y_cb - y_ct) * 0.18 + (y_ob - y_ot) * 0.0
-        yy_in = y_ct + (y_cb - y_ct) * fy
-        yy_out = y_ot + (y_ob - y_ot) * fy
-        inset = w * 0.14
-        # 왼쪽 페이지 글줄
-        d.line([(cx - gap - inset, yy_in), (cx - w + inset, yy_out)], fill=ink, width=lw)
-        # 오른쪽 페이지 글줄
-        d.line([(cx + gap + inset, yy_in), (cx + w - inset, yy_out)], fill=ink, width=lw)
-
-    # 중앙 스파인(책등) 살짝 강조
-    d.line([(cx, y_ct - S * 0.005), (cx, y_cb)], fill=(228, 222, 205), width=max(2, int(S * 0.01)))
-
-    # ---- 둥근 모서리(any 용도) / 마스커블은 꽉 채움 ----
+    # 둥근 모서리(any 용도) / 마스커블·애플은 꽉 채움
     if not maskable:
-        r = int(S * 0.23)
-        corner = Image.new("L", (S, S), 0)
-        ImageDraw.Draw(corner).rounded_rectangle([0, 0, S - 1, S - 1], radius=r, fill=255)
-        img.putalpha(corner)
+        m = Image.new("L", (S, S), 0)
+        ImageDraw.Draw(m).rounded_rectangle([0, 0, S - 1, S - 1], radius=int(S * 0.23), fill=255)
+        img.putalpha(m)
 
     return img.resize((size, size), Image.LANCZOS)
 
 
 def draw_apple(size):
-    # iOS는 둥근모서리를 시스템이 처리 → 꽉 찬 사각(불투명) 배경
+    # iOS는 둥근모서리를 시스템이 처리 → 꽉 찬 사각(불투명)
     return draw_icon(size, maskable=True).convert("RGB")
 
 
