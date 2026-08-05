@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v18";
+  const APP_VERSION = "v19";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -499,14 +499,15 @@
   const isStandalone = () =>
     window.navigator.standalone === true ||
     (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS 포함
   function setAppHeight() {
-    let h;
-    if (isStandalone()) {
-      // 설치본: iOS가 화면 높이를 상단 안전영역(다이나믹아일랜드)만큼 작게 줘서 하단에 여백이 생김.
-      // → 실제 전체 화면 높이(screen.height)로 채운다. 안전영역은 padding으로 처리됨.
-      h = (window.screen && window.screen.height) || window.innerHeight;
-    } else {
-      h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    // 기본: 실제 보이는 높이(브라우저·안드로이드·아이패드 모두 이게 맞음)
+    let h = (window.visualViewport && window.visualViewport.height) || window.innerHeight || 0;
+    // iOS 홈 화면 앱만: 화면 높이를 상단 안전영역만큼 '작게' 주는 버그가 있어, 더 큰 실제 화면 높이로 보정.
+    if (isStandalone() && isIOS) {
+      const scr = (window.screen && window.screen.height) || 0;
+      if (scr > h) h = scr;
     }
     if (h) document.documentElement.style.setProperty("--app-height", h + "px");
   }

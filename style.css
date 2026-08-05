@@ -200,7 +200,7 @@ body {
 }
 .modal[hidden] { display: none; }
 .modal-card {
-  width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto;
+  width: 100%; max-width: 480px; max-height: 82vh; overflow-y: auto;
   background: linear-gradient(180deg, #1c2450, #141a3a);
   border: 1px solid var(--glass-brd); border-radius: 26px 26px 0 0;
   padding: 26px 22px calc(26px + env(safe-area-inset-bottom)); position: relative;
