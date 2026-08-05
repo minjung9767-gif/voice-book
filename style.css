@@ -29,7 +29,7 @@ body {
 /* ---------- 밤하늘 배경 ---------- */
 .night-sky {
   position: fixed; inset: 0; z-index: -1;
-  height: 100dvh; height: var(--app-height, 100dvh);
+  height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
   background: linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 55%, #070a1f 100%);
   overflow: hidden;
 }
@@ -60,7 +60,7 @@ body {
 /* ---------- 화면 전환 ---------- */
 .screen {
   position: fixed; inset: 0; display: none; flex-direction: column;
-  height: 100dvh; height: var(--app-height, 100dvh);
+  height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .screen.active { display: flex; }

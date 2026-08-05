@@ -355,10 +355,12 @@
         <h2>도움말 🌙</h2>
         <h3>📲 홈 화면에 추가하기 (앱처럼 쓰기)</h3>
         <ul>
-          <li><b>아이폰(사파리)</b>: 아래 <b>공유</b> 버튼 → <b>"홈 화면에 추가"</b></li>
-          <li><b>안드로이드(크롬)</b>: 오른쪽 위 <b>⋮ 메뉴</b> → <b>"홈 화면에 추가"</b></li>
+          <li><b>아이폰</b>: 꼭 <b>사파리(Safari)</b>에서 → 아래 <b>공유(⬆️)</b> → <b>"홈 화면에 추가"</b></li>
+          <li><b>안드로이드</b>: <b>크롬</b>에서 → <b>⋮ 메뉴</b> → <b>"홈 화면에 추가"</b></li>
         </ul>
-        <p class="hint">설치하면 아이콘으로 바로 열리고, 녹음도 더 안전하게 보관돼요.</p>
+        <p><b>카카오톡·인스타 등으로 링크를 열었다면</b>, 먼저 <b>사파리·크롬으로 열어주세요.</b><br/>
+        (화면 <b>오른쪽 메뉴(⋯)</b> → <b>"다른 브라우저로 열기 / Safari로 열기"</b>)</p>
+        <p class="hint">아이폰은 사파리에서만 "홈 화면에 추가"가 돼요. 그리고 녹음은 <b>연 브라우저마다 따로 저장</b>되니, 처음부터 사파리·크롬으로 여는 게 안전해요.</p>
         <h3>🎙️ 이렇게 써요</h3>
         <ul>
           <li>이야기 고르기 → 엄마/아빠 고르기 → <b>녹음하기</b></li>
@@ -417,6 +419,31 @@
     $("doRestore").addEventListener("click", () => restoreInput.click());
   }
 
+  // 카카오톡·인스타 등 '인앱 브라우저'인지 감지
+  function isInAppBrowser() {
+    const ua = navigator.userAgent || "";
+    return /KAKAOTALK|Instagram|FBAN|FBAV|FB_IAB|Line\/|NAVER|DaumApps|everytimeApp|Snapchat|TikTok|; wv\)/i.test(ua);
+  }
+  function showIabNoticeIfNeeded() {
+    if (!isInAppBrowser()) return;
+    try { if (sessionStorage.getItem("iabSeen") === "1") return; sessionStorage.setItem("iabSeen", "1"); } catch (e) {}
+    openModal(`
+      <div class="modal-body">
+        <h2>사파리·크롬으로 열어주세요 🌙</h2>
+        <p>지금 <b>카카오톡·인스타 같은 앱 안</b>에서 열렸어요. 여기서도 쓸 수는 있지만,
+        <b>녹음이 안전하게 저장되지 않을 수 있어요.</b></p>
+        <p><b>이렇게 열어주세요:</b></p>
+        <ul>
+          <li>화면 <b>오른쪽 메뉴(⋯ 또는 나침반)</b> 누르기</li>
+          <li><b>"다른 브라우저로 열기 / Safari로 열기"</b> 선택</li>
+        </ul>
+        <p class="hint">아이폰은 사파리에서만 "홈 화면에 추가"도 돼요.</p>
+        <button class="modal-btn" id="iabOk">알겠어요</button>
+      </div>`);
+    const ok = document.getElementById("iabOk");
+    if (ok) ok.addEventListener("click", closeModal);
+  }
+
   function openFeedback() {
     openModal(`
       <div class="modal-body">
@@ -464,8 +491,14 @@
   window.addEventListener("pagehide", stopEverything);
 
   /* ================= 시작 ================= */
-  // 실제 보이는 화면 높이를 직접 재서 세로를 꽉 채운다(아이폰 사파리 툴바 대응)
+  // 화면 높이 맞추기.
+  // - 홈 화면 앱(설치본): 툴바가 없으므로 CSS 100dvh(전체화면)를 그대로 쓴다 → 여백 없음.
+  // - 사파리 등 브라우저: 툴바 때문에 어긋나므로 실제 보이는 높이를 직접 재서 맞춘다.
+  const isStandalone = () =>
+    window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
   function setAppHeight() {
+    if (isStandalone()) { document.documentElement.style.removeProperty("--app-height"); return; }
     const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
     document.documentElement.style.setProperty("--app-height", h + "px");
   }
@@ -484,4 +517,5 @@
   try { player.shuffle = localStorage.getItem("autoNext") === "1"; } catch (e) {}
   updateShuffleBtn();
   renderHome();
+  showIabNoticeIfNeeded();
 })();
