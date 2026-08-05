@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v14";
+  const APP_VERSION = "v15";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -515,16 +515,8 @@
     window.navigator.standalone === true ||
     (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
   function setAppHeight() {
-    let h;
-    if (isStandalone()) {
-      // 설치본: iOS가 dvh/innerHeight를 상단 안전영역만큼 작게 줘서 하단에 여백이 생김
-      // → 실제 화면 높이(screen.height)로 채운다. 안전영역은 padding으로 이미 처리됨.
-      const scr = (window.screen && window.screen.height) || 0;
-      const inner = window.innerHeight || 0;
-      h = Math.max(scr, inner) || inner; // 더 큰 값(전체 화면)으로
-    } else {
-      h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    }
+    // 실제 '보이는 영역' 높이로 맞춘다(설치본·브라우저 공통). 안전영역은 각 하단 요소의 padding으로 처리.
+    const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
     if (h) document.documentElement.style.setProperty("--app-height", h + "px");
   }
   setAppHeight();
