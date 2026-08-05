@@ -3,7 +3,7 @@
  * 오프라인일 때만 캐시로 보여준다. → 업데이트가 폰에 바로 반영된다.
  * 파일을 크게 바꾸면 아래 CACHE 버전 숫자를 올린다.
  */
-const CACHE = "voicebook-v14";
+const CACHE = "voicebook-v15";
 const CORE = [
   "./",
   "./index.html",
