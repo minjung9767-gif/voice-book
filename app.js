@@ -464,6 +464,16 @@
   window.addEventListener("pagehide", stopEverything);
 
   /* ================= 시작 ================= */
+  // 실제 보이는 화면 높이를 직접 재서 세로를 꽉 채운다(아이폰 사파리 툴바 대응)
+  function setAppHeight() {
+    const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    document.documentElement.style.setProperty("--app-height", h + "px");
+  }
+  setAppHeight();
+  window.addEventListener("resize", setAppHeight);
+  window.addEventListener("orientationchange", setAppHeight);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", setAppHeight);
+
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
   try { player.shuffle = localStorage.getItem("autoNext") === "1"; } catch (e) {}
