@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#141a3a" />
-  <meta name="description" content="엄마·아빠 목소리로 읽어주는 우리 아기 잠자리 그림책. 녹음도 재생도 이 기기 안에서만." />
-  <title>엄마 아빠 목소리 책 🌙</title>
+  <meta name="description" content="엄마·아빠 목소리로 읽어주는 우리 아기 잠자리 그림책, 별밤책. 녹음도 재생도 이 기기 안에서만." />
+  <title>별밤책 🌙</title>
 
   <!-- PWA / 홈화면 추가 -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="목소리책" />
+  <meta name="apple-mobile-web-app-title" content="별밤책" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -26,18 +26,23 @@
     <div class="moon"></div>
   </div>
 
-  <!-- ===== 홈 화면: 대본 목록 ===== -->
+  <!-- ===== 홈 화면 ===== -->
   <section id="home" class="screen active">
     <header class="home-head">
-      <h1 class="app-title">엄마 아빠 목소리 책</h1>
+      <button id="helpBtn" class="corner-btn" aria-label="도움말">?</button>
+      <h1 class="app-title">별밤책</h1>
       <p class="app-sub">엄마·아빠 목소리로, 포근한 밤.</p>
+      <button id="nameChip" class="name-chip" type="button">👶 아기 이름 정하기</button>
     </header>
 
     <ul id="scriptList" class="script-list" aria-label="이야기 목록"></ul>
 
-    <p class="privacy-note">
-      🔒 녹음한 목소리는 <b>이 기기 안에만</b> 저장돼요. 밖으로 나가지 않아요.
-    </p>
+    <footer class="home-foot">
+      <button id="backupBtn" class="foot-link" type="button">🛟 녹음 백업 · 복원</button>
+      <p class="privacy-note">
+        🔒 녹음은 <b>이 기기 안에만</b> 저장돼요. 소중한 녹음은 꼭 <b>백업</b>해 두세요.
+      </p>
+    </footer>
   </section>
 
   <!-- ===== 이야기 화면: 대본 보기 · 녹음 · 재생 ===== -->
@@ -66,25 +71,37 @@
     </div>
   </section>
 
-  <!-- ===== 보기 화면(아기용): 큰 글씨가 한 장씩 넘어감 ===== -->
+  <!-- ===== 보기 화면(아기용): 밤 무드등 + 목소리 (글자 없음) ===== -->
   <section id="player" class="screen player">
     <button id="playerClose" class="player-close" aria-label="닫기">✕</button>
-
-    <div class="player-stage">
-      <p id="playerTitle" class="player-title"></p>
-      <p id="playerLine" class="player-line"></p>
+    <div class="mood">
+      <div class="mood-emoji" id="moodEmoji" aria-hidden="true">🌙</div>
+      <p class="mood-title" id="moodTitle"></p>
     </div>
-
-    <div class="player-dots" id="playerDots" aria-hidden="true"></div>
-
     <div class="player-controls">
-      <button id="shuffleToggle" class="pill" aria-pressed="false">🔀 이어서 자동 재생</button>
-      <button id="playPause" class="pill pill-main" aria-label="재생/멈춤">⏸ 멈춤</button>
+      <button id="shuffleToggle" class="pill" type="button" aria-pressed="false">🔀 이어서 자동 재생</button>
+      <button id="playPause" class="pill pill-main" type="button" aria-label="재생/멈춤">⏸ 멈춤</button>
     </div>
   </section>
 
+  <!-- ===== 공용 모달(도움말·이름·백업·의견) ===== -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button id="modalClose" class="modal-close" aria-label="닫기">✕</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- Netlify Forms 감지용 숨은 폼 (실제 전송은 앱 안 폼에서 함) -->
+  <form name="feedback" data-netlify="true" netlify-honeypot="bot-field" hidden>
+    <input type="text" name="message" />
+    <input type="email" name="email" />
+    <input type="text" name="bot-field" />
+  </form>
+
   <!-- 파일 불러오기용 숨은 input -->
   <input type="file" id="importInput" accept="audio/*" hidden />
+  <input type="file" id="restoreInput" accept="application/json,.json" hidden />
 
   <!-- 토스트 -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
