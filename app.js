@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v19";
+  const APP_VERSION = "v20";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -177,9 +177,12 @@
       dockStatus.innerHTML = `🎙️ <b>${label}</b> 목소리로 녹음돼 있어요`;
       dockControls.innerHTML = "";
       addBtn("▶ 들려주기", "btn-play big", () => openPlayer());
-      addBtn("🔴 다시 녹음", "btn-ghost", startRecording);
-      addBtn("⬇ 내려받기", "btn-ghost", () => downloadSaved(has));
-      addBtn("🗑 지우기", "btn-ghost danger", deleteSaved);
+      const row = document.createElement("div");
+      row.className = "dock-actions";
+      row.appendChild(makeAction("🔴", "다시 녹음", startRecording));
+      row.appendChild(makeAction("⬇", "내려받기", () => downloadSaved(has)));
+      row.appendChild(makeAction("🗑", "지우기", deleteSaved, true));
+      dockControls.appendChild(row);
     } else {
       dockStatus.innerHTML = `아직 <b>${label}</b> 목소리 녹음이 없어요`;
       dockControls.innerHTML = "";
@@ -190,6 +193,13 @@
   function addBtn(label, cls, onClick) {
     const b = document.createElement("button"); b.className = "dock-btn " + cls; b.textContent = label;
     b.addEventListener("click", onClick); dockControls.appendChild(b);
+  }
+  function makeAction(icon, label, onClick, danger) {
+    const b = document.createElement("button");
+    b.className = "dock-action" + (danger ? " danger" : "");
+    b.innerHTML = `<span class="da-icon" aria-hidden="true">${icon}</span><span class="da-label">${label}</span>`;
+    b.addEventListener("click", onClick);
+    return b;
   }
 
   /* ================= 녹음 ================= */

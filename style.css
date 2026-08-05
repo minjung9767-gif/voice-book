@@ -140,6 +140,8 @@ body {
   border-radius: 999px; padding: 9px 22px; cursor: pointer; transition: all .15s ease;
 }
 .voice-tab.active { background: var(--gold); border-color: var(--gold); color: #3a2f10; box-shadow: 0 4px 16px rgba(255, 217, 138, 0.28); }
+.voice-hint { text-align: center; font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+.voice-hint b { color: var(--cream-soft); font-weight: 400; }
 
 .script-body { flex: 1; overflow-y: auto; padding: 10px 24px 20px; text-align: center; }
 .line { font-size: 25px; line-height: 1.7; margin: 0 0 16px; color: var(--cream); word-break: keep-all; }
@@ -164,6 +166,18 @@ body {
 .dock-btn.btn-play, .dock-btn.btn-save { background: var(--go); color: #0e2a20; }
 .dock-btn.btn-ghost { background: var(--glass); color: var(--cream); border: 1px solid var(--glass-brd); }
 .dock-btn.btn-ghost.danger { color: #ff9aa6; border-color: rgba(255,120,130,.35); }
+
+/* 세련된 보조 액션 (다시 녹음 · 내려받기 · 지우기) */
+.dock-actions { display: flex; gap: 8px; width: 100%; margin-top: 2px; }
+.dock-action {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--cream-soft);
+  border-radius: 16px; padding: 11px 6px; cursor: pointer; transition: transform .1s ease, background .12s ease;
+}
+.dock-action:active { transform: scale(.95); background: rgba(255,255,255,.12); }
+.dock-action .da-icon { font-size: 19px; line-height: 1; }
+.dock-action .da-label { font-size: 13px; }
+.dock-action.danger { color: #ff9aa6; }
 
 .rec-dot { display: inline-block; width: 12px; height: 12px; background: var(--rec); border-radius: 50%; margin-right: 4px; animation: blink 1s infinite; vertical-align: middle; }
 @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:.25;} }
