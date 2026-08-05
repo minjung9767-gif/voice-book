@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v15";
+  const APP_VERSION = "v16";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -23,7 +23,7 @@
   const homeEl = $("home"), storyEl = $("story"), playerEl = $("player");
   const listEl = $("scriptList"), bodyEl = $("scriptBody"), titleEl = $("storyTitle");
   const dockStatus = $("dockStatus"), dockControls = $("dockControls");
-  const importInput = $("importInput"), restoreInput = $("restoreInput"), toastEl = $("toast");
+  const restoreInput = $("restoreInput"), toastEl = $("toast");
   const moodEmoji = $("moodEmoji"), moodTitle = $("moodTitle");
   const playPauseBtn = $("playPause"), shuffleBtn = $("shuffleToggle");
   const nameChip = $("nameChip");
@@ -184,7 +184,6 @@
       dockStatus.innerHTML = `아직 <b>${label}</b> 목소리 녹음이 없어요`;
       dockControls.innerHTML = "";
       addBtn("🔴 녹음하기", "btn-rec big", startRecording);
-      addBtn("📁 파일 불러오기", "btn-ghost", () => importInput.click());
     }
   }
   function addBtn(label, cls, onClick) {
@@ -308,15 +307,6 @@
     if (!confirm(`${VOICE_LABEL[state.voice]} 목소리 녹음을 지울까요? 되돌릴 수 없어요.`)) return;
     await dbDelete(curKey()); state.saved.delete(curKey()); toast("지웠어요"); refreshDock();
   }
-  async function onImportFile(file) {
-    if (!file) return;
-    if (!file.type.startsWith("audio/")) { toast("오디오 파일만 불러올 수 있어요"); return; }
-    try {
-      await dbPut({ key: curKey(), scriptId: state.scriptId, voice: state.voice, blob: file, mime: file.type, createdAt: Date.now() });
-      state.saved.add(curKey()); toast("불러왔어요 📁"); refreshDock();
-    } catch (e) { toast("불러오기에 실패했어요"); }
-  }
-
   /* ================= 전체 백업 / 복원 ================= */
   async function backupAll() {
     const all = await dbAll();
@@ -430,7 +420,8 @@
         <button class="modal-btn ghost" id="doRestore">📥 백업 파일에서 복원</button>
         <h3>어디에 저장하나요?</h3>
         <p>백업을 누르면 <b>저장할 곳을 고르는 창</b>이 떠요. <b>파일 앱 · 아이클라우드 · 카카오톡(나에게)</b> 등에 보관하세요.</p>
-        <p class="hint">※ 백업은 사진·영상이 아니라 <b>데이터 파일</b>이라 <b>사진첩(앨범)</b>엔 저장되지 않아요. 복원할 땐 저장해 둔 그곳(파일 앱·카톡 등)에서 <b>별밤책-백업.json</b>을 고르면 돼요.</p>
+        <p class="hint">※ 백업은 사진·영상이 아니라 <b>데이터 파일</b>이라 <b>사진첩(앨범)</b>엔 저장되지 않아요.</p>
+        <p class="hint"><b>카카오톡으로 보냈다면?</b> 카톡 대화방에서 <b>별밤책-백업.json</b>을 눌러 <b>공유 → "파일에 저장"</b>한 뒤, 위 <b>복원</b>에서 그 파일을 고르면 돼요.</p>
       </div>`);
     $("doBackup").addEventListener("click", () => { backupAll(); });
     $("doRestore").addEventListener("click", () => restoreInput.click());
@@ -465,7 +456,7 @@
     openModal(`
       <div class="modal-body">
         <h2>의견 보내기 💛</h2>
-        <p>불편한 점, 바라는 점, 응원 모두 좋아요. 만든 사람에게 전해져요.</p>
+        <p>불편한 점, 바라는 점, 응원 모두 좋아요.<br/>만든 사람에게 전해져요.</p>
         <label class="field-label" for="fbMsg">내용</label>
         <textarea class="text-area" id="fbMsg" placeholder="자유롭게 적어주세요"></textarea>
         <label class="field-label" for="fbEmail">답장 받을 이메일 (선택)</label>
@@ -500,7 +491,6 @@
   $("modalClose").addEventListener("click", closeModal);
   modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
   document.querySelectorAll(".voice-tab").forEach((t) => t.addEventListener("click", () => selectVoice(t.dataset.voice)));
-  importInput.addEventListener("change", (e) => { onImportFile(e.target.files[0]); e.target.value = ""; });
   restoreInput.addEventListener("change", (e) => { restoreFromFile(e.target.files[0]); e.target.value = ""; });
   $("playerClose").addEventListener("click", closePlayer);
   playPauseBtn.addEventListener("click", togglePlayPause);
