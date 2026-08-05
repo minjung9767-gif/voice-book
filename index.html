@@ -40,7 +40,8 @@
     <footer class="home-foot">
       <button id="backupBtn" class="foot-link" type="button">🛟 녹음 백업 · 복원</button>
       <p class="privacy-note">
-        🔒 녹음은 <b>이 기기에만</b> 저장돼요 · 꼭 <b>백업</b>하세요
+        <span class="pn-line1">🔒 녹음은 <b>이 기기 안에만</b> 저장돼요.</span>
+        <span class="pn-line2">소중한 녹음은 꼭 <b>백업</b>해 두세요.</span>
       </p>
     </footer>
   </section>
@@ -100,9 +101,8 @@
     <input type="text" name="bot-field" />
   </form>
 
-  <!-- 파일 불러오기용 숨은 input -->
-  <input type="file" id="importInput" accept="audio/*" hidden />
-  <input type="file" id="restoreInput" accept="application/json,.json" hidden />
+  <!-- 백업 복원용 숨은 input -->
+  <input type="file" id="restoreInput" accept=".txt,.json,text/plain,application/json" hidden />
 
   <!-- 토스트 -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

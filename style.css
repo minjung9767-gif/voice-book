@@ -53,10 +53,11 @@ body {
 @keyframes twinkle { 0%,100% { opacity: 0.45; } 50% { opacity: 0.7; } }
 .moon {
   position: absolute;
-  top: calc(18px + env(safe-area-inset-top)); right: 20px;
-  width: 50px; height: 50px; border-radius: 50%;
-  background: radial-gradient(circle at 38% 38%, #fff7e0, #ffe6a8 60%, #f6d78a);
-  box-shadow: 0 0 24px 6px rgba(255, 231, 168, 0.3);
+  top: calc(20px + env(safe-area-inset-top)); right: 22px;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 38%, #f3eede, #e4dcc2 62%, #cdc4a6);
+  box-shadow: 0 0 14px 3px rgba(228, 220, 194, 0.14);
+  opacity: 0.72;
 }
 
 /* ---------- 화면 전환 ---------- */
@@ -119,7 +120,9 @@ body {
   border: 1px solid var(--glass-brd); background: var(--glass);
   color: var(--cream); border-radius: 999px; padding: 8px 18px; cursor: pointer; margin-bottom: 8px;
 }
-.privacy-note { font-size: 12px; font-weight: 400; color: var(--muted); margin: 0; line-height: 1.5; white-space: nowrap; }
+.privacy-note { margin: 0; font-weight: 400; color: var(--muted); word-break: keep-all; }
+.privacy-note .pn-line1 { display: block; font-size: 11.5px; line-height: 1.4; opacity: .85; }
+.privacy-note .pn-line2 { display: block; font-size: 13.5px; line-height: 1.5; margin-top: 2px; }
 .privacy-note b { color: var(--gold); }
 
 /* ---------- 이야기 화면 ---------- */
@@ -227,8 +230,11 @@ body {
 }
 .modal-body h2 { font-weight: 400; font-size: 23px; margin: 0 0 4px; color: var(--cream); }
 .modal-body h3 { font-weight: 400; font-size: 18px; margin: 20px 0 6px; color: var(--gold); }
-.modal-body p, .modal-body li { font-size: 17px; line-height: 1.7; color: var(--cream-soft); font-weight: 500; }
+.modal-body p, .modal-body li { font-size: 17px; line-height: 1.7; color: var(--cream-soft); font-weight: 500; word-break: keep-all; }
 .modal-body ul { margin: 6px 0; padding-left: 20px; }
+.modal-body .steps { margin: 8px 0 4px; padding-left: 22px; }
+.modal-body .steps li { font-size: 16px; line-height: 1.7; color: var(--cream-soft); margin-bottom: 5px; word-break: keep-all; }
+.modal-body .steps li b { color: var(--gold); }
 .modal-body .hint { font-size: 15px; color: var(--muted); line-height: 1.6; }
 
 .field-label { display: block; font-size: 16px; font-weight: 600; color: var(--cream-soft); margin: 14px 0 6px; }
