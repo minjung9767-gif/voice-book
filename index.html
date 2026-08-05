@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#ff8aad" />
-  <meta name="description" content="엄마·아빠 목소리로 읽어주는 우리 아기 그림책. 녹음도 재생도 이 기기 안에서만." />
-  <title>우리 목소리 책 🎙️</title>
+  <meta name="theme-color" content="#141a3a" />
+  <meta name="description" content="엄마·아빠 목소리로 읽어주는 우리 아기 잠자리 그림책. 녹음도 재생도 이 기기 안에서만." />
+  <title>엄마 아빠 목소리 책 🌙</title>
 
   <!-- PWA / 홈화면 추가 -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="목소리책" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -20,12 +20,17 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- 밤하늘 배경 (모든 화면 공통) -->
+  <div class="night-sky" aria-hidden="true">
+    <div class="stars"></div>
+    <div class="moon"></div>
+  </div>
 
   <!-- ===== 홈 화면: 대본 목록 ===== -->
   <section id="home" class="screen active">
     <header class="home-head">
-      <h1 class="app-title">우리 목소리 책 <span aria-hidden="true">🎙️</span></h1>
-      <p class="app-sub">엄마·아빠 목소리로, 언제나 곁에서.</p>
+      <h1 class="app-title">엄마 아빠 목소리 책</h1>
+      <p class="app-sub">엄마·아빠 목소리로, 포근한 밤.</p>
     </header>
 
     <ul id="scriptList" class="script-list" aria-label="이야기 목록"></ul>
@@ -61,6 +66,23 @@
     </div>
   </section>
 
+  <!-- ===== 보기 화면(아기용): 큰 글씨가 한 장씩 넘어감 ===== -->
+  <section id="player" class="screen player">
+    <button id="playerClose" class="player-close" aria-label="닫기">✕</button>
+
+    <div class="player-stage">
+      <p id="playerTitle" class="player-title"></p>
+      <p id="playerLine" class="player-line"></p>
+    </div>
+
+    <div class="player-dots" id="playerDots" aria-hidden="true"></div>
+
+    <div class="player-controls">
+      <button id="shuffleToggle" class="pill" aria-pressed="false">🔀 이어서 자동 재생</button>
+      <button id="playPause" class="pill pill-main" aria-label="재생/멈춤">⏸ 멈춤</button>
+    </div>
+  </section>
+
   <!-- 파일 불러오기용 숨은 input -->
   <input type="file" id="importInput" accept="audio/*" hidden />
 
@@ -68,6 +90,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="scripts-data.js"></script>
+  <script src="analytics.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
