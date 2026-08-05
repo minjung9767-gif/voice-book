@@ -119,7 +119,7 @@ body {
   border: 1px solid var(--glass-brd); background: var(--glass);
   color: var(--cream); border-radius: 999px; padding: 8px 18px; cursor: pointer; margin-bottom: 8px;
 }
-.privacy-note { font-size: 13px; font-weight: 400; color: var(--muted); margin: 0; line-height: 1.55; }
+.privacy-note { font-size: 12px; font-weight: 400; color: var(--muted); margin: 0; line-height: 1.5; white-space: nowrap; }
 .privacy-note b { color: var(--gold); }
 
 /* ---------- 이야기 화면 ---------- */

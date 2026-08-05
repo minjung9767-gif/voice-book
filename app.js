@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v17";
+  const APP_VERSION = "v18";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -375,25 +375,10 @@
         <h3>💛 의견 보내기</h3>
         <p>쓰다가 불편한 점이나 바라는 게 있으면 알려주세요. 큰 힘이 돼요.</p>
         <button class="modal-btn" id="helpToFeedback">의견 보내기</button>
-        <p class="hint" id="diagLine" style="margin-top:20px; text-align:center;"></p>
+        <p class="hint" style="margin-top:18px; text-align:center;">별밤책 ${APP_VERSION}</p>
       </div>`);
     $("helpToBackup").addEventListener("click", openBackup);
     $("helpToFeedback").addEventListener("click", openFeedback);
-    const diag = $("diagLine");
-    if (diag) {
-      const mode = isStandalone() ? "앱" : "브라우저";
-      const vv = window.visualViewport ? Math.round(window.visualViewport.height) : "-";
-      const homeH = Math.round((homeEl.getBoundingClientRect && homeEl.getBoundingClientRect().height) || 0);
-      let sat = 0, sab = 0;
-      try {
-        const probe = document.createElement("div");
-        probe.style.cssText = "position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)";
-        document.body.appendChild(probe);
-        const cs = getComputedStyle(probe); sat = parseInt(cs.paddingTop) || 0; sab = parseInt(cs.paddingBottom) || 0;
-        probe.remove();
-      } catch (e) {}
-      diag.textContent = `별밤책 ${APP_VERSION} · ${mode} · win${window.innerHeight} vv${vv} scr${(window.screen && window.screen.height) || "-"} home${homeH} sat${sat} sab${sab}`;
-    }
   }
 
   function openName() {
