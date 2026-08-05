@@ -16,20 +16,22 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html { background: #0d1230; }
-html, body { margin: 0; height: 100%; height: 100dvh; }
+/* 화면 높이를 JS가 잰 실제 값(--app-height)으로. position:absolute 자식들이 이 높이를 꽉 채운다.
+   (홈 화면 앱에서 position:fixed가 하단 안전영역만큼 못 닿던 문제 → absolute + 실제높이로 해결) */
+html, body { margin: 0; height: var(--app-height, 100dvh); overflow: hidden; }
 body {
+  position: relative;
   font-family: "Gowun Dodum", -apple-system, BlinkMacSystemFont,
     system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   color: var(--cream);
   background: #0d1230;
-  overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
 /* ---------- 밤하늘 배경 ---------- */
 .night-sky {
-  position: fixed; inset: 0; z-index: -1;
-  height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
+  position: absolute; inset: 0; z-index: 0;
+  height: 100%;
   background: linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 55%, #070a1f 100%);
   overflow: hidden;
 }
@@ -59,8 +61,8 @@ body {
 
 /* ---------- 화면 전환 ---------- */
 .screen {
-  position: fixed; inset: 0; display: none; flex-direction: column;
-  height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
+  position: absolute; inset: 0; z-index: 1; display: none; flex-direction: column;
+  height: 100%;
   /* 하단 안전영역은 각 화면의 맨 아래 요소(도크·푸터·컨트롤)에서 처리 → 여기선 0 (중복 방지) */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
@@ -192,7 +194,7 @@ body {
 
 /* ---------- 모달 (도움말·이름·백업·의견) ---------- */
 .modal {
-  position: fixed; inset: 0; z-index: 60;
+  position: absolute; inset: 0; z-index: 60;
   background: rgba(6, 9, 24, 0.6); backdrop-filter: blur(3px);
   display: flex; align-items: flex-end; justify-content: center;
 }
