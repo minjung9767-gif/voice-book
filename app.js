@@ -39,6 +39,19 @@
   const dockControls = $("dockControls");
   const importInput = $("importInput");
   const toastEl = $("toast");
+  const playerEl = $("player");
+  const playerLineEl = $("playerLine");
+  const playerTitleEl = $("playerTitle");
+  const playerDotsEl = $("playerDots");
+  const playPauseBtn = $("playPause");
+  const shuffleBtn = $("shuffleToggle");
+
+  // 보기 화면(아기용) 상태
+  const player = {
+    active: false, scriptId: null, voice: "mom",
+    lines: [], idx: -1, audio: null, url: null,
+    perLine: 0, fallbackTimer: null, shuffle: false,
+  };
 
   const scriptById = (id) => window.SCRIPTS.find((s) => s.id === id);
   const curKey = () => `${state.scriptId}:${state.voice}`;
@@ -158,6 +171,7 @@
   function showHome() {
     stopEverything();
     storyEl.classList.remove("active");
+    playerEl.classList.remove("active");
     homeEl.classList.add("active");
     state.scriptId = null;
     renderHome();
@@ -219,7 +233,7 @@
     if (has) {
       dockStatus.innerHTML = `🎙️ <b>${label}</b> 목소리로 녹음돼 있어요`;
       dockControls.innerHTML = "";
-      addBtn("▶ 들려주기", "btn-play big", () => playSaved(has));
+      addBtn("▶ 들려주기", "btn-play big", () => openPlayer());
       addBtn("🔴 다시 녹음", "btn-ghost", startRecording);
       addBtn("⬇ 내려받기", "btn-ghost", () => downloadSaved(has));
       addBtn("🗑 지우기", "btn-ghost danger", () => deleteSaved());
@@ -316,6 +330,7 @@
       state.pending = null;
       state.mode = "idle";
       toast("저장했어요 💾");
+      track("record_save");
       refreshDock();
     } catch (e) {
       toast("저장에 실패했어요 (저장 공간을 확인해 주세요)");
@@ -338,16 +353,6 @@
     if (!state.pending) return;
     if (isPlaying()) { stopPlayback(); refreshDock(); return; }
     playBlob(state.pending.blob);
-  }
-  function playSaved(rec) {
-    if (isPlaying()) { stopPlayback(); refreshDock(); markPlayButton(false); return; }
-    playBlob(rec.blob);
-    markPlayButton(true);
-    state.audio.onended = () => { markPlayButton(false); cleanupAudioUrl(); };
-  }
-  function markPlayButton(playing) {
-    const b = dockControls.querySelector(".btn-play");
-    if (b) b.textContent = playing ? "⏸ 멈추기" : "▶ 들려주기";
   }
   function isPlaying() { return state.audio && !state.audio.paused; }
   function stopPlayback() {
@@ -401,10 +406,169 @@
     }
   }
 
+  /* ================= 보기 화면 (아기용, 자동 넘김 + 랜덤 이어재생) ================= */
+  function updateShuffleBtn() {
+    shuffleBtn.classList.toggle("on", player.shuffle);
+    shuffleBtn.setAttribute("aria-pressed", player.shuffle ? "true" : "false");
+    shuffleBtn.textContent = player.shuffle ? "🔀 이어서 자동 재생 ✓" : "🔀 이어서 자동 재생";
+  }
+  function toggleShuffle() {
+    player.shuffle = !player.shuffle;
+    try { localStorage.setItem("autoNext", player.shuffle ? "1" : "0"); } catch (e) {}
+    updateShuffleBtn();
+    if (player.shuffle) track("shuffle_on");
+  }
+
+  async function openPlayer(id, voice) {
+    id = id || state.scriptId;
+    voice = voice || state.voice;
+    const s = scriptById(id);
+    if (!s) return;
+    const rec = await dbGet(`${id}:${voice}`);
+    if (!rec) { toast("먼저 녹음을 해주세요"); return; }
+    try { state.saved = new Set(await dbAllKeys()); } catch (e) {} // 랜덤용 목록 최신화
+    stopPlayback(); // 미리듣기 오디오 정리
+    player.voice = voice;
+    homeEl.classList.remove("active");
+    storyEl.classList.remove("active");
+    playerEl.classList.add("active");
+    playInPlayer(s, rec);
+    track("play");
+  }
+
+  function playInPlayer(s, rec) {
+    stopPlayerAudio();
+    player.active = true;
+    player.scriptId = s.id;
+    player.lines = s.lines;
+    player.idx = -1;
+    player.perLine = 0;
+    playerTitleEl.textContent = s.title;
+    buildDots(s.lines.length);
+    showPlayerLine(0);
+
+    player.url = URL.createObjectURL(rec.blob);
+    const a = new Audio(player.url);
+    player.audio = a;
+
+    const setPerLine = () => {
+      if (isFinite(a.duration) && a.duration > 0) player.perLine = a.duration / s.lines.length;
+    };
+    a.addEventListener("loadedmetadata", () => {
+      if (!isFinite(a.duration)) {
+        // 일부 webm 녹음은 duration 이 Infinity → 강제로 계산시키는 알려진 방법
+        a.currentTime = 1e101;
+        a.addEventListener("timeupdate", function once() {
+          a.removeEventListener("timeupdate", once);
+          try { a.currentTime = 0; } catch (e) {}
+          setPerLine();
+          startFallbackIfNeeded(s.lines.length);
+        });
+      } else {
+        setPerLine();
+      }
+    });
+    a.addEventListener("timeupdate", () => {
+      if (player.perLine > 0) {
+        const i = Math.min(s.lines.length - 1, Math.floor(a.currentTime / player.perLine));
+        if (i !== player.idx) showPlayerLine(i);
+      }
+    });
+    a.addEventListener("ended", onPlayerEnded);
+    setPlayPause(true);
+    a.play().catch(() => { toast("재생할 수 없어요"); setPlayPause(false); });
+  }
+
+  // duration 을 못 구하는 경우(webm Infinity)에만 시간 기반으로 대체 넘김
+  function startFallbackIfNeeded(n) {
+    if (player.perLine > 0) return;
+    stopFallback();
+    player.fallbackTimer = setInterval(() => {
+      if (!player.audio || player.audio.paused) return;
+      const next = player.idx + 1;
+      if (next < n) showPlayerLine(next);
+    }, 4500);
+  }
+  function stopFallback() { if (player.fallbackTimer) { clearInterval(player.fallbackTimer); player.fallbackTimer = null; } }
+
+  function buildDots(n) {
+    playerDotsEl.innerHTML = "";
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement("span");
+      d.className = "dot";
+      playerDotsEl.appendChild(d);
+    }
+  }
+  function showPlayerLine(i) {
+    player.idx = i;
+    playerLineEl.classList.add("fade");
+    setTimeout(() => {
+      playerLineEl.textContent = player.lines[i] || "";
+      playerLineEl.classList.remove("fade");
+    }, 180);
+    const dots = playerDotsEl.children;
+    for (let k = 0; k < dots.length; k++) dots[k].classList.toggle("on", k === i);
+  }
+
+  function setPlayPause(playing) { playPauseBtn.textContent = playing ? "⏸ 멈춤" : "▶ 다시"; }
+  function togglePlayPause() {
+    const a = player.audio;
+    if (!a) { replayCurrent(); return; }
+    if (a.paused) { a.play(); setPlayPause(true); }
+    else { a.pause(); setPlayPause(false); }
+  }
+  function replayCurrent() {
+    const s = scriptById(player.scriptId);
+    if (!s) return;
+    dbGet(`${s.id}:${player.voice}`).then((rec) => { if (rec) playInPlayer(s, rec); });
+  }
+
+  async function onPlayerEnded() {
+    if (player.shuffle) {
+      const next = nextRecordedStory(player.scriptId, player.voice);
+      if (next) {
+        const rec = await dbGet(`${next.id}:${player.voice}`);
+        if (rec) { playInPlayer(next, rec); track("auto_next"); return; }
+      }
+    }
+    stopFallback();
+    stopPlayerAudio();
+    showPlayerEndState();
+  }
+  function showPlayerEndState() {
+    player.lines = ["잘 자요 🌙"];
+    buildDots(1);
+    showPlayerLine(0);
+    setPlayPause(false); // "▶ 다시" 로
+  }
+
+  // 현재 목소리로 녹음된 다른 이야기 중 하나를 랜덤으로 (하나뿐이면 그것 반복)
+  function nextRecordedStory(currentId, voice) {
+    const recorded = window.SCRIPTS.filter((s) => state.saved.has(`${s.id}:${voice}`));
+    if (recorded.length === 0) return null;
+    let pool = recorded.filter((s) => s.id !== currentId);
+    if (pool.length === 0) pool = recorded;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function stopPlayerAudio() {
+    stopFallback();
+    if (player.audio) { try { player.audio.pause(); } catch (e) {} player.audio = null; }
+    if (player.url) { URL.revokeObjectURL(player.url); player.url = null; }
+  }
+  function closePlayer() {
+    stopPlayerAudio();
+    player.active = false;
+    playerEl.classList.remove("active");
+    if (state.scriptId) { storyEl.classList.add("active"); refreshDock(); }
+    else { homeEl.classList.add("active"); }
+  }
+
   /* ================= 정리 ================= */
   function stopEverything() {
     stopTimer();
     stopPlayback();
+    stopPlayerAudio();
     if (state.recorder && state.recorder.state !== "inactive") { try { state.recorder.stop(); } catch (e) {} }
     releaseStream();
     state.recorder = null;
@@ -421,7 +585,14 @@
     onImportFile(e.target.files[0]);
     e.target.value = "";
   });
+  $("playerClose").addEventListener("click", closePlayer);
+  playPauseBtn.addEventListener("click", togglePlayPause);
+  shuffleBtn.addEventListener("click", toggleShuffle);
   window.addEventListener("pagehide", stopEverything);
+
+  // 랜덤 이어재생 설정 불러오기
+  try { player.shuffle = localStorage.getItem("autoNext") === "1"; } catch (e) {}
+  updateShuffleBtn();
 
   /* ================= 시작 ================= */
   // 저장이 잘 유지되도록(브라우저가 함부로 지우지 않도록) 요청

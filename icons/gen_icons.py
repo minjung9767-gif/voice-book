@@ -14,8 +14,8 @@ def draw_icon(size, maskable=False):
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
-    top = (255, 176, 158)   # 부드러운 살구색
-    bot = (255, 138, 173)   # 부드러운 분홍
+    top = (74, 86, 160)     # 밤하늘 인디고
+    bot = (26, 32, 74)      # 깊은 남색
     # 세로 그라데이션 배경
     for y in range(S):
         d.line([(0, y), (S, y)], fill=lerp(top, bot, y / S))
@@ -33,7 +33,14 @@ def draw_icon(size, maskable=False):
     w = S * 0.22 * scale          # 마이크 몸통 폭 (세로로 긴 캡슐)
     cap_top = S * (0.50 - 0.22 * scale)
     cap_bot = S * (0.50 + 0.08 * scale)
-    white = (255, 255, 255, 255)
+    white = (255, 252, 242, 255)  # 크림색 (밤하늘에 은은하게)
+
+    # 작은 별 몇 개 (밤하늘 장식)
+    star = (255, 250, 225, 235)
+    for (sx, sy, sr) in [(0.24, 0.26, 0.016), (0.78, 0.30, 0.020),
+                         (0.72, 0.68, 0.014), (0.20, 0.70, 0.012)]:
+        r = S * sr
+        d.ellipse([S * sx - r, S * sy - r, S * sx + r, S * sy + r], fill=star)
 
     # 마이크 몸통 (둥근 캡슐)
     d.rounded_rectangle(
