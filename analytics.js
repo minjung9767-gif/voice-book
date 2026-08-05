@@ -8,7 +8,7 @@
  */
 (function () {
   "use strict";
-  var CODE = ""; // ← 여기에 GoatCounter 코드만 넣으면 통계가 켜져요.
+  var CODE = "voicebook"; // GoatCounter 코드 (voicebook.goatcounter.com)
 
   // 설정 전 기본값: 아무 것도 안 함
   window.track = function () {};
