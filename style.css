@@ -61,7 +61,8 @@ body {
 .screen {
   position: fixed; inset: 0; display: none; flex-direction: column;
   height: 100vh; height: 100dvh; height: var(--app-height, 100dvh);
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* 하단 안전영역은 각 화면의 맨 아래 요소(도크·푸터·컨트롤)에서 처리 → 여기선 0 (중복 방지) */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 .screen.active { display: flex; }
 
