@@ -67,6 +67,18 @@
     a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
+  // 공유 창으로 저장할 곳(파일 앱·아이클라우드·카톡 등)을 고르게. 안 되면 그냥 내려받기.
+  async function shareOrDownload(blob, name, text) {
+    try {
+      const file = new File([blob], name, { type: blob.type || "application/octet-stream" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: name, text: text || name });
+        return "shared";
+      }
+    } catch (e) { if (e && e.name === "AbortError") return "cancel"; }
+    downloadBlob(blob, name);
+    return "download";
+  }
 
   /* ================= 아기 이름 ================= */
   function getBabyName() { try { return (localStorage.getItem("babyName") || "").trim(); } catch (e) { return ""; } }
@@ -311,8 +323,9 @@
     const items = [];
     for (const rec of all) items.push({ key: rec.key, scriptId: rec.scriptId, voice: rec.voice, mime: rec.mime, createdAt: rec.createdAt, data: await blobToDataURL(rec.blob) });
     const payload = { app: "별밤책", version: 1, exportedAt: Date.now(), recordings: items };
-    downloadBlob(new Blob([JSON.stringify(payload)], { type: "application/json" }), "별밤책-백업.json");
-    toast(all.length + "개 녹음을 파일로 백업했어요 🛟"); track("backup");
+    const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    const res = await shareOrDownload(blob, "별밤책-백업.json", "별밤책 녹음 백업 파일이에요. 파일 앱이나 카톡(나에게)에 보관해 두세요.");
+    if (res !== "cancel") toast(all.length + "개 녹음을 백업했어요 🛟"); track("backup");
   }
   async function restoreFromFile(file) {
     if (!file) return;
@@ -392,11 +405,13 @@
     openModal(`
       <div class="modal-body">
         <h2>녹음 백업 · 복원 🛟</h2>
-        <p>녹음은 이 기기 안에만 있어요. <b>백업</b>하면 모든 녹음을 <b>파일 하나</b>로 저장해요.
+        <p>녹음은 이 기기 안에만 있어요. <b>백업</b>하면 모든 녹음을 <b>파일 하나</b>로 묶어요.
         기기를 바꾸거나 실수로 지워져도, 그 파일로 <b>복원</b>하면 되살아나요.</p>
-        <button class="modal-btn gold" id="doBackup">📦 모든 녹음 백업 (파일로 저장)</button>
+        <button class="modal-btn gold" id="doBackup">📦 모든 녹음 백업하기</button>
         <button class="modal-btn ghost" id="doRestore">📥 백업 파일에서 복원</button>
-        <p class="hint">백업 파일(별밤책-백업.json)은 잘 보관해 두세요. 사진처럼 클라우드에 올려두면 더 안전해요.</p>
+        <h3>어디에 저장하나요?</h3>
+        <p>백업을 누르면 <b>저장할 곳을 고르는 창</b>이 떠요. <b>파일 앱 · 아이클라우드 · 카카오톡(나에게)</b> 등에 보관하세요.</p>
+        <p class="hint">※ 백업은 사진·영상이 아니라 <b>데이터 파일</b>이라 <b>사진첩(앨범)</b>엔 저장되지 않아요. 복원할 땐 저장해 둔 그곳(파일 앱·카톡 등)에서 <b>별밤책-백업.json</b>을 고르면 돼요.</p>
       </div>`);
     $("doBackup").addEventListener("click", () => { backupAll(); });
     $("doRestore").addEventListener("click", () => restoreInput.click());
