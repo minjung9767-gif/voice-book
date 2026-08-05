@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v12";
+  const APP_VERSION = "v13";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -384,7 +384,15 @@
       const mode = isStandalone() ? "앱" : "브라우저";
       const vv = window.visualViewport ? Math.round(window.visualViewport.height) : "-";
       const homeH = Math.round((homeEl.getBoundingClientRect && homeEl.getBoundingClientRect().height) || 0);
-      diag.textContent = `별밤책 ${APP_VERSION} · ${mode} · win${window.innerHeight} vv${vv} scr${(window.screen && window.screen.height) || "-"} home${homeH}`;
+      let sat = 0, sab = 0;
+      try {
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)";
+        document.body.appendChild(probe);
+        const cs = getComputedStyle(probe); sat = parseInt(cs.paddingTop) || 0; sab = parseInt(cs.paddingBottom) || 0;
+        probe.remove();
+      } catch (e) {}
+      diag.textContent = `별밤책 ${APP_VERSION} · ${mode} · win${window.innerHeight} vv${vv} scr${(window.screen && window.screen.height) || "-"} home${homeH} sat${sat} sab${sab}`;
     }
   }
 
@@ -507,9 +515,17 @@
     window.navigator.standalone === true ||
     (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
   function setAppHeight() {
-    if (isStandalone()) { document.documentElement.style.removeProperty("--app-height"); return; }
-    const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    document.documentElement.style.setProperty("--app-height", h + "px");
+    let h;
+    if (isStandalone()) {
+      // 설치본: iOS가 dvh/innerHeight를 상단 안전영역만큼 작게 줘서 하단에 여백이 생김
+      // → 실제 화면 높이(screen.height)로 채운다. 안전영역은 padding으로 이미 처리됨.
+      const scr = (window.screen && window.screen.height) || 0;
+      const inner = window.innerHeight || 0;
+      h = Math.max(scr, inner) || inner; // 더 큰 값(전체 화면)으로
+    } else {
+      h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    }
+    if (h) document.documentElement.style.setProperty("--app-height", h + "px");
   }
   setAppHeight();
   window.addEventListener("resize", setAppHeight);
