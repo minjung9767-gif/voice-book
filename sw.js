@@ -3,7 +3,7 @@
  * 홈화면 앱(PWA)으로 설치되게 한다.
  * 파일을 크게 바꾸면 아래 CACHE 버전 숫자를 올리면 새로 받아온다.
  */
-const CACHE = "voicebook-v4";
+const CACHE = "voicebook-v5";
 const CORE = [
   "./",
   "./index.html",
