@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v19";
+  const APP_VERSION = "v21";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -165,9 +165,12 @@
       dockStatus.innerHTML = `🎙️ <b>${label}</b> 목소리로 녹음돼 있어요`;
       dockControls.innerHTML = "";
       addBtn("▶ 들려주기", "btn-play big", () => openPlayer());
-      addBtn("🔴 다시 녹음", "btn-ghost", startRecording);
-      addBtn("⬇ 내려받기", "btn-ghost", () => downloadSaved(has));
-      addBtn("🗑 지우기", "btn-ghost danger", deleteSaved);
+      const row = document.createElement("div");
+      row.className = "dock-actions";
+      row.appendChild(makeAction("🔴", "다시 녹음", startRecording));
+      row.appendChild(makeAction("⬇", "내려받기", () => downloadSaved(has)));
+      row.appendChild(makeAction("🗑", "지우기", deleteSaved, true));
+      dockControls.appendChild(row);
     } else {
       dockStatus.innerHTML = `아직 <b>${label}</b> 목소리 녹음이 없어요`;
       dockControls.innerHTML = "";
@@ -177,6 +180,13 @@
   function addBtn(label, cls, onClick) {
     const b = document.createElement("button"); b.className = "dock-btn " + cls; b.textContent = label;
     b.addEventListener("click", onClick); dockControls.appendChild(b);
+  }
+  function makeAction(icon, label, onClick, danger) {
+    const b = document.createElement("button");
+    b.className = "dock-action" + (danger ? " danger" : "");
+    b.innerHTML = `<span class="da-icon" aria-hidden="true">${icon}</span><span class="da-label">${label}</span>`;
+    b.addEventListener("click", onClick);
+    return b;
   }
 
   /* ================= 녹음 ================= */
@@ -384,25 +394,10 @@
         <h3>💛 의견 보내기</h3>
         <p>쓰다가 불편한 점이나 바라는 게 있으면 알려주세요. 큰 힘이 돼요.</p>
         <button class="modal-btn" id="helpToFeedback">의견 보내기</button>
-        <p class="hint" id="diagLine" style="margin-top:20px; text-align:center;"></p>
+        <p class="hint" style="margin-top:18px; text-align:center;">별밤책 ${APP_VERSION}</p>
       </div>`);
     $("helpToBackup").addEventListener("click", openBackup);
     $("helpToFeedback").addEventListener("click", openFeedback);
-    const diag = $("diagLine");
-    if (diag) {
-      const mode = isStandalone() ? "앱" : "브라우저";
-      const vv = window.visualViewport ? Math.round(window.visualViewport.height) : "-";
-      const homeH = Math.round((homeEl.getBoundingClientRect && homeEl.getBoundingClientRect().height) || 0);
-      let sat = 0, sab = 0;
-      try {
-        const probe = document.createElement("div");
-        probe.style.cssText = "position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)";
-        document.body.appendChild(probe);
-        const cs = getComputedStyle(probe); sat = parseInt(cs.paddingTop) || 0; sab = parseInt(cs.paddingBottom) || 0;
-        probe.remove();
-      } catch (e) {}
-      diag.textContent = `별밤책 ${APP_VERSION} · ${mode} · win${window.innerHeight} vv${vv} scr${(window.screen && window.screen.height) || "-"} home${homeH} sat${sat} sab${sab}`;
-    }
   }
 
   function openName() {
@@ -535,9 +530,16 @@
   const isStandalone = () =>
     window.navigator.standalone === true ||
     (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS 포함
   function setAppHeight() {
-    // 실제 '보이는 영역' 높이로 맞춘다(설치본·브라우저 공통). 안전영역은 각 하단 요소의 padding으로 처리.
-    const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    // 기본: 실제 보이는 높이(브라우저·안드로이드·아이패드 모두 이게 맞음)
+    let h = (window.visualViewport && window.visualViewport.height) || window.innerHeight || 0;
+    // iOS 홈 화면 앱만: 화면 높이를 상단 안전영역만큼 '작게' 주는 버그가 있어, 더 큰 실제 화면 높이로 보정.
+    if (isStandalone() && isIOS) {
+      const scr = (window.screen && window.screen.height) || 0;
+      if (scr > h) h = scr;
+    }
     if (h) document.documentElement.style.setProperty("--app-height", h + "px");
   }
   setAppHeight();
