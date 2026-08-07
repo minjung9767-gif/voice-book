@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1030" />
+  <title>별밤책 · 시범 (별을 세는 아기 곰)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Dongle:wght@700&family=Jua&display=swap" rel="stylesheet" />
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html,body { height:100%; overflow:hidden; }
+    body {
+      font-family:"Jua","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+      color:#e7e2f5; -webkit-user-select:none; user-select:none; touch-action:manipulation;
+      background:linear-gradient(180deg,#0b1030 0%,#141a45 55%,#232a5c 100%);
+    }
+    /* 밤하늘 별 */
+    .sky { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+    .star { position:absolute; border-radius:50%; background:#fdf3d0; opacity:.25; animation:tw ease-in-out infinite; }
+    @keyframes tw { 0%,100%{opacity:.15;transform:scale(.9)} 50%{opacity:.75;transform:scale(1.15)} }
+
+    .app { position:fixed; inset:0; z-index:1; display:flex; flex-direction:column; }
+
+    /* 상단바 */
+    .top { padding:calc(10px + env(safe-area-inset-top)) 14px 6px; text-align:center; }
+    .title { font-family:"Dongle","Jua",sans-serif; font-weight:700; font-size:40px; line-height:.9;
+      background:linear-gradient(180deg,#ffe9b3,#ffd79a 60%,#f4b46a); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .tabs { display:flex; gap:8px; justify-content:center; margin-top:8px; flex-wrap:wrap; }
+    .tab { font-family:inherit; font-size:16px; padding:7px 16px; border-radius:999px; cursor:pointer;
+      border:1px solid rgba(255,255,255,.22); background:rgba(255,255,255,.08); color:#cdd3f5; }
+    .tab.on { background:#ffe9b3; border-color:#ffe9b3; color:#3a2f10; }
+    .tab.mode { color:#a9d4ff; }
+    .tab.mode.on { background:#ffe9b3; color:#3a2f10; }
+    .tab:disabled { opacity:.4; }
+
+    /* 무대(장면) */
+    .stage { flex:1; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:18px; padding:2vh 16vw; text-align:center; }
+    .art { font-size:clamp(4rem,20vmin,9rem); line-height:1.1; filter:drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
+    .text { max-width:760px; font-size:clamp(1.2rem,4.6vmin,1.8rem); line-height:1.75; color:#e7e2f5;
+      text-shadow:0 2px 8px rgba(0,0,0,.5); word-break:keep-all; }
+    .text .nm { color:#ffe9b3; white-space:nowrap; }
+    .scene-in { animation:fin .8s ease both; }
+    @keyframes fin { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+    /* 좌우 화살표 */
+    .nav { position:absolute; top:50%; transform:translateY(-50%); z-index:5;
+      width:clamp(46px,12vw,64px); height:clamp(46px,12vw,64px); border-radius:50%;
+      border:1px solid rgba(255,255,255,.28); background:rgba(255,255,255,.12); color:#ffe9b3;
+      font-size:clamp(1.4rem,5vw,2.2rem); display:flex; align-items:center; justify-content:center; cursor:pointer; backdrop-filter:blur(4px); }
+    .prev { left:clamp(6px,2vw,20px); } .next { right:clamp(6px,2vw,20px); }
+    .nav:disabled { opacity:.25; }
+    .nav:active { transform:translateY(-50%) scale(.9); }
+
+    /* 진행 점 */
+    .dots { display:flex; gap:7px; flex-wrap:wrap; justify-content:center; max-width:80%; }
+    .dot { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.18); transition:.35s; }
+    .dot.done { background:rgba(255,233,179,.5); } .dot.now { background:#ffe9b3; transform:scale(1.35); }
+
+    /* 하단 조작판 */
+    .panel { padding:12px 16px calc(16px + env(safe-area-inset-bottom)); text-align:center; }
+    .status { font-size:15px; color:#cdd3f5; margin-bottom:10px; min-height:20px; }
+    .status b { color:#ffe9b3; }
+    .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    .btn { font-family:inherit; font-size:17px; border:none; border-radius:16px; padding:14px 20px; cursor:pointer; color:#0e2a20; background:#fff; }
+    .btn:active { transform:scale(.97); }
+    .btn.big { flex:1 1 100%; font-size:20px; padding:16px; }
+    .btn.rec { background:#ff6b7a; color:#fff; }
+    .btn.stop { background:#ff6b7a; color:#fff; }
+    .btn.play { background:#74d3ab; color:#0e2a20; }
+    .btn.ghost { background:rgba(255,255,255,.1); color:#e7e2f5; border:1px solid rgba(255,255,255,.22); }
+    .btn.gold { background:linear-gradient(160deg,#ffc878,#ffa05a); color:#4a2d10; }
+    .btn:disabled { opacity:.4; }
+    .recdot { display:inline-block; width:11px; height:11px; border-radius:50%; background:#ff6b7a; margin-right:5px; vertical-align:middle; animation:blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+    /* 잠깐 멈춤 오버레이 */
+    .pause-ov { position:absolute; inset:0; z-index:9; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+      background:rgba(8,11,32,.72); backdrop-filter:blur(3px); }
+    .pause-ov.hidden { display:none; }
+    .po-moon { font-size:clamp(3rem,12vmin,6rem); animation:bob 2.4s ease-in-out infinite; }
+    @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+    .po-t { font-size:20px; color:#ffe9b3; } .po-s { font-size:15px; color:#aab2e0; }
+
+    .hint { font-size:13px; color:#9aa3d8; margin-top:8px; }
+    .toast { position:fixed; left:50%; bottom:calc(80px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(10px);
+      background:rgba(0,0,0,.85); color:#fff; padding:11px 18px; border-radius:999px; font-size:15px; opacity:0; transition:.2s; z-index:20; pointer-events:none; }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <div class="sky" id="sky" aria-hidden="true"></div>
+  <div class="app">
+    <div class="top">
+      <div class="title">별을 세는 아기 곰</div>
+      <div class="tabs">
+        <button class="tab voice on" data-voice="mom">🌷 엄마</button>
+        <button class="tab voice" data-voice="dad">🌰 아빠</button>
+      </div>
+      <div class="tabs">
+        <button class="tab mode on" data-mode="record">🎙 녹음</button>
+        <button class="tab mode" data-mode="play" id="playTab">▶ 들려주기</button>
+      </div>
+    </div>
+
+    <div class="stage" id="stage">
+      <button class="nav prev" id="prev" aria-label="이전 장면">❮</button>
+      <button class="nav next" id="next" aria-label="다음 장면">❯</button>
+      <div class="art scene-in" id="art">🐻</div>
+      <p class="text scene-in" id="text"></p>
+      <div class="dots" id="dots"></div>
+      <div class="pause-ov hidden" id="pauseOv">
+        <div class="po-moon">🌙</div>
+        <div class="po-t">잠깐 쉬는 중이에요</div>
+        <div class="po-s">화면을 누르면 이어서 들려줄게요</div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+  (() => {
+    "use strict";
+    // ===== 대본: 내용은 그대로, 장면(이모지+문장) 구조로만 정리 =====
+    const STORY = {
+      id: "bear-stars", title: "별을 세는 아기 곰",
+      scenes: [
+        { emoji:"🐻", text:"잠이 오지 않는 아기 곰이 있었어요." },
+        { emoji:"💗", text:"엄마 곰이 다정하게 말했어요." },
+        { emoji:"✨", text:"\"우리, 별을 세어 볼까?\"" },
+        { emoji:"🌌", text:"둘은 창밖 깜깜한 밤하늘을 올려다봤어요." },
+        { emoji:"⭐", text:"\"하나, 반짝. 둘, 반짝. 셋, 반짝.\"" },
+        { emoji:"😌", text:"별을 셀수록 아기 곰의 눈이 스르르 감겼어요." },
+        { emoji:"🌟", text:"\"저 별은 우리 아기를 지켜 준단다.\"" },
+        { emoji:"💫", text:"\"저 별은 좋은 꿈을 가져다준대.\"" },
+        { emoji:"🍃", text:"바람이 살랑 불어와 이불을 덮어 주었어요." },
+        { emoji:"😴", text:"아기 곰은 어느새 새근새근 잠이 들었어요." },
+        { emoji:"🌙", text:"{이름아}, 우리도 별을 세며 잘 자자." },
+        { emoji:"💤", text:"하나… 둘… 셋… 쉬…" },
+      ],
+    };
+    const N = STORY.scenes.length;
+    const VLABEL = { mom:"엄마", dad:"아빠" };
+
+    // ===== 상태 =====
+    let voice="mom", mode="record", cur=0;
+    let recorder=null, chunks=[], stream=null, recording=false;
+    let recorded=new Set();            // 지금 목소리에서 녹음된 장면 index
+    let previewAudio=null;             // 녹음 확인용
+    let playAudio=null, playing=false, paused=false, playToken=0;
+
+    const $=(id)=>document.getElementById(id);
+    const artEl=$("art"), textEl=$("text"), dotsEl=$("dots"), panelEl=$("panel"),
+          prevEl=$("prev"), nextEl=$("next"), pauseOv=$("pauseOv"), stageEl=$("stage"), toastEl=$("toast");
+
+    // 별 만들기
+    (function(){ const sky=$("sky"); for(let i=0;i<40;i++){ const s=document.createElement("span"); s.className="star";
+      s.style.left=(Math.random()*100).toFixed(1)+"%"; s.style.top=(Math.random()*100).toFixed(1)+"%";
+      const sz=(2+Math.random()*3).toFixed(1); s.style.width=sz+"px"; s.style.height=sz+"px";
+      s.style.animationDelay=(Math.random()*4).toFixed(2)+"s"; s.style.animationDuration=(2.5+Math.random()*3).toFixed(2)+"s"; sky.appendChild(s);} })();
+
+    let toastTimer=null;
+    function toast(m){ toastEl.textContent=m; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>toastEl.classList.remove("show"),2400); }
+
+    // ===== 아기 이름 =====
+    function babyName(){ try{ return (localStorage.getItem("babyName")||"").trim(); }catch(e){ return ""; } }
+    function josa(n){ if(!n) return "야"; const c=n.charCodeAt(n.length-1); if(c>=0xAC00&&c<=0xD7A3) return ((c-0xAC00)%28===0)?"야":"아"; return "야"; }
+    function renderName(t){ const n=babyName(), shown=n||"아기 이름"; return t.replace(/\{이름아\}/g,'<span class="nm">('+shown+')'+josa(n)+'</span>'); }
+
+    // ===== IndexedDB (장면별 클립) =====
+    let dbp=null;
+    function db(){ if(dbp) return dbp; dbp=new Promise((res,rej)=>{ const r=indexedDB.open("voicebook-demo",1);
+      r.onupgradeneeded=()=>r.result.createObjectStore("clips",{keyPath:"key"}); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); return dbp; }
+    const key=(v,i)=>`${STORY.id}:${v}:${i}`;
+    async function getClip(v,i){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips").objectStore("clips").get(key(v,i)); t.onsuccess=()=>res(t.result||null); t.onerror=()=>rej(t.error); }); }
+    async function putClip(v,i,blob,mime){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips","readwrite").objectStore("clips").put({key:key(v,i),blob,mime}); t.onsuccess=()=>res(); t.onerror=()=>rej(t.error); }); }
+    async function loadRecorded(v){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips").objectStore("clips").getAllKeys();
+      t.onsuccess=()=>{ const pre=`${STORY.id}:${v}:`; res(new Set((t.result||[]).filter(k=>k.indexOf(pre)===0).map(k=>+k.slice(pre.length)))); }; t.onerror=()=>rej(t.error); }); }
+
+    // ===== 녹음 mime =====
+    function pickMime(){ const c=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/aac","audio/ogg;codecs=opus"];
+      if(window.MediaRecorder&&MediaRecorder.isTypeSupported){ for(const t of c) if(MediaRecorder.isTypeSupported(t)) return t; } return ""; }
+
+    // ===== 화면 그리기 =====
+    function paintScene(anim){ const sc=STORY.scenes[cur];
+      artEl.textContent=sc.emoji; textEl.innerHTML=renderName(sc.text);
+      if(anim){ artEl.classList.remove("scene-in"); textEl.classList.remove("scene-in"); void artEl.offsetWidth; artEl.classList.add("scene-in"); textEl.classList.add("scene-in"); }
+      dotsEl.innerHTML=""; for(let i=0;i<N;i++){ const d=document.createElement("span"); d.className="dot"+(i<cur?" done":"")+(i===cur?" now":""); dotsEl.appendChild(d); }
+      prevEl.disabled=cur===0; nextEl.disabled=cur===N-1;
+    }
+
+    function renderPanel(){
+      if(mode==="record"){
+        const has=recorded.has(cur);
+        panelEl.innerHTML =
+          `<div class="status">${recording? '<span class="recdot"></span> 녹음 중… 다 읽으면 <b>멈춤</b>' : `이 장면 <b>${cur+1} / ${N}</b> · ${has? '✅ 녹음됨':'⚪ 아직 비어 있어요'}`}</div>`+
+          `<div class="row">`+
+            (recording
+              ? `<button class="btn stop big" id="bStop">■ 멈춤 (이 장면 완료)</button>`
+              : `<button class="btn rec big" id="bRec">🔴 ${has?'이 장면 다시 녹음':'이 장면 녹음'}</button>`+
+                (has? `<button class="btn play" id="bPrev2">▶ 들어보기</button>`:``))+
+          `</div>`+
+          `<div class="status" style="margin-top:12px;">${recorded.size} / ${N} 장면 녹음됨 ${recorded.size===N?'🎉':''}</div>`+
+          `<div class="row"><button class="btn gold" id="bToPlay" ${recorded.size===N?'':'disabled'}>▶ 아기에게 들려주기</button></div>`+
+          `<div class="hint">각 장면을 읽고 녹음 → ❯ 로 다음 장면. 아무 장면이나 다시 녹음할 수 있어요.</div>`;
+        const bRec=$("bRec"); if(bRec) bRec.onclick=startRec;
+        const bStop=$("bStop"); if(bStop) bStop.onclick=stopRec;
+        const bp=$("bPrev2"); if(bp) bp.onclick=previewScene;
+        const bt=$("bToPlay"); if(bt) bt.onclick=()=>setMode("play");
+        pauseOv.classList.add("hidden");
+      } else {
+        panelEl.innerHTML =
+          `<div class="status">${playing? '재생 중이에요 · 화면을 누르면 잠깐 멈춰요' : '▶ 눌러 처음부터 들려줄게요'}</div>`+
+          `<div class="row">`+
+            `<button class="btn play big" id="bPlay">${playing?'⏸ 잠깐 멈춤':'▶ 처음부터 들려주기'}</button>`+
+          `</div>`+
+          `<div class="hint">장면 소리가 끝나면 다음 장면으로 저절로 넘어가요 · ❮ ❯ 로 앞뒤 이동</div>`;
+        const bp=$("bPlay"); if(bp) bp.onclick=()=>{ if(playing) togglePause(); else startPlay(0); };
+      }
+    }
+
+    function refresh(anim){ paintScene(anim); renderPanel(); }
+
+    // ===== 목소리 / 모드 전환 =====
+    async function setVoice(v){ if(v===voice||recording) return; stopAllAudio(); voice=v; cur=0;
+      document.querySelectorAll(".tab.voice").forEach(t=>t.classList.toggle("on",t.dataset.voice===v));
+      recorded=await loadRecorded(voice); updatePlayTab(); refresh(true); }
+    function updatePlayTab(){ $("playTab").disabled = recorded.size!==N; }
+    async function setMode(m){ if(m===mode) return; if(recording) return;
+      stopAllAudio();
+      if(m==="play" && recorded.size!==N){ toast(`${VLABEL[voice]} 목소리를 ${N}장면 다 녹음해야 들려줄 수 있어요 (${recorded.size}/${N})`); return; }
+      mode=m; cur=0;
+      document.querySelectorAll(".tab.mode").forEach(t=>t.classList.toggle("on",t.dataset.mode===m));
+      refresh(true);
+      if(m==="play") startPlay(0);
+    }
+
+    // ===== 녹음 =====
+    async function startRec(){
+      if(!navigator.mediaDevices||!window.MediaRecorder){ toast("이 브라우저는 녹음을 지원하지 않아요"); return; }
+      try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ toast("마이크 사용을 허용해 주세요 🎤"); return; }
+      const mime=pickMime();
+      try{ recorder=mime? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream); }catch(e){ recorder=new MediaRecorder(stream); }
+      chunks=[]; recorder.ondataavailable=(e)=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+      recorder.onstop=onStop; recorder.start(); recording=true; renderPanel();
+    }
+    function stopRec(){ if(recorder&&recorder.state!=="inactive") recorder.stop(); }
+    async function onStop(){
+      const mime=(recorder&&recorder.mimeType)||pickMime()||"audio/webm";
+      const blob=new Blob(chunks,{type:mime});
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } recorder=null; recording=false;
+      if(!blob.size){ toast("녹음이 비어 있어요. 다시 해볼까요?"); renderPanel(); return; }
+      try{ await putClip(voice,cur,blob,mime); recorded.add(cur); }catch(e){ toast("저장 실패 (저장 공간 확인)"); renderPanel(); return; }
+      updatePlayTab();
+      toast(`${cur+1}번째 장면 저장했어요 💾`);
+      // 다음 미녹음 장면으로 자연스럽게 이동
+      if(cur<N-1){ cur++; refresh(true); } else { refresh(false); }
+    }
+    async function previewScene(){
+      stopAllAudio(); const rec=await getClip(voice,cur); if(!rec){ toast("이 장면 녹음이 없어요"); return; }
+      previewAudio=new Audio(URL.createObjectURL(rec.blob)); previewAudio.play().catch(()=>toast("재생할 수 없어요"));
+    }
+
+    // ===== 재생(아기에게) =====
+    async function startPlay(from){
+      stopAllAudio(); paused=false; pauseOv.classList.add("hidden");
+      const token=++playToken; playing=true; cur=from; refresh(true); renderPanel();
+      playFrom(token, from);
+    }
+    async function playFrom(token, i){
+      if(token!==playToken) return;
+      if(i>=N){ endPlay(token); return; }
+      cur=i; paintScene(true);
+      const rec=await getClip(voice,i); if(token!==playToken) return;
+      if(!rec){ endPlay(token); return; }
+      playAudio=new Audio(URL.createObjectURL(rec.blob));
+      playAudio.onended=()=>{ if(token!==playToken) return; playFrom(token, i+1); };
+      playAudio.onerror=()=>{ if(token!==playToken) return; playFrom(token, i+1); };
+      try{ await playAudio.play(); }catch(e){ /* 자동재생 막힘 */ }
+    }
+    function endPlay(token){ if(token!==playToken) return; playing=false; stopAllAudio();
+      artEl.textContent="😴"; textEl.innerHTML='<span class="nm">잘 자요</span> 🌙'; renderPanel(); }
+    function togglePause(){ if(!playing) return;
+      if(paused){ paused=false; pauseOv.classList.add("hidden"); if(playAudio) playAudio.play().catch(()=>{}); }
+      else { paused=true; pauseOv.classList.remove("hidden"); if(playAudio) playAudio.pause(); } }
+
+    function stopAllAudio(){ playToken++; if(playAudio){ try{playAudio.pause()}catch(e){} playAudio=null; } if(previewAudio){ try{previewAudio.pause()}catch(e){} previewAudio=null; } playing=false; }
+
+    // ===== 이동 =====
+    function go(i){ const t=Math.max(0,Math.min(i,N-1)); if(mode==="play"){ startPlay(t); } else { stopAllAudio(); cur=t; refresh(true); } }
+    prevEl.onclick=(e)=>{ e.stopPropagation(); go(cur-1); };
+    nextEl.onclick=(e)=>{ e.stopPropagation(); go(cur+1); };
+    stageEl.addEventListener("click",(e)=>{ if(e.target===prevEl||e.target===nextEl) return; if(mode==="play"&&playing) togglePause(); });
+    document.addEventListener("keydown",(e)=>{ if(e.key==="ArrowLeft") go(cur-1); else if(e.key==="ArrowRight") go(cur+1);
+      else if(e.code==="Space"){ e.preventDefault(); if(mode==="play"&&playing) togglePause(); } });
+
+    document.querySelectorAll(".tab.voice").forEach(t=>t.onclick=()=>setVoice(t.dataset.voice));
+    document.querySelectorAll(".tab.mode").forEach(t=>t.onclick=()=>setMode(t.dataset.mode));
+
+    // 시작
+    (async()=>{ recorded=await loadRecorded(voice); updatePlayTab(); refresh(true); })();
+  })();
+  </script>
+</body>
+</html>
