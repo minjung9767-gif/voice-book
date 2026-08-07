@@ -62,6 +62,10 @@
     .play { background:#74d3ab; color:#0e2a20; }
     .sub { font-size:15px; color:#cdd3f5; background:none; border:none; font-family:inherit; cursor:pointer; padding:4px 10px; }
     .sub.link { color:#a9d4ff; text-decoration:underline; }
+    .listen { font-family:inherit; font-size:15px; padding:8px 18px; border-radius:999px; cursor:pointer;
+      border:1px solid rgba(255,255,255,.24); background:rgba(255,255,255,.08); color:#cdd3f5; transition:transform .1s ease, background .1s ease, border-color .1s ease; }
+    .listen:active { transform:scale(.95); }
+    .listen.on { background:rgba(116,211,171,.22); border-color:#74d3ab; color:#bff0da; }
     .done-note { font-family:inherit; font-size:15px; color:#ffe9b3; background:rgba(255,233,179,.12);
       border:1px solid rgba(255,233,179,.4); border-radius:999px; padding:8px 18px; cursor:pointer; }
 
@@ -125,7 +129,7 @@
     let voice="mom", cur=0, forceRecord=false;
     let recorder=null, chunks=[], stream=null, recording=false;
     let recorded=new Set();
-    let previewAudio=null, playAudio=null, playing=false, paused=false, playToken=0;
+    let previewAudio=null, previewPlaying=false, playAudio=null, playing=false, paused=false, playToken=0;
 
     const $=(id)=>document.getElementById(id);
     const artEl=$("art"), textEl=$("text"), progEl=$("prog"), bottomEl=$("bottom"),
@@ -190,13 +194,13 @@
           html = `<button class="main-btn rec" id="bStop">■ 멈춤</button>`;
         } else {
           html = `<button class="main-btn rec" id="bRec">🔴 ${has?'이 장면 다시 녹음':'이 장면 녹음'}</button>`;
-          if(has) html += `<button class="sub link" id="bPrev2">▶ 들어보기</button>`;
+          if(has) html += `<button class="listen ${previewPlaying?'on':''}" id="bPrev2">${previewPlaying?'⏸ 멈추기':'▶ 들어보기'}</button>`;
           if(allDone()) html += `<button class="done-note" id="bToPlay">✅ 다 녹음했어요 · ▶ 들려주기</button>`;
         }
         bottomEl.innerHTML=html;
         const b1=$("bRec"); if(b1) b1.onclick=startRec;
         const b2=$("bStop"); if(b2) b2.onclick=stopRec;
-        const b3=$("bPrev2"); if(b3) b3.onclick=previewScene;
+        const b3=$("bPrev2"); if(b3) b3.onclick=togglePreview;
         const b4=$("bToPlay"); if(b4) b4.onclick=()=>{ forceRecord=false; cur=0; startPlay(0); };
         pauseOv.classList.add("hidden");
       }
@@ -210,6 +214,7 @@
 
     // ===== 녹음 =====
     async function startRec(){
+      stopPreview();
       if(!navigator.mediaDevices||!window.MediaRecorder){ toast("이 브라우저는 녹음을 지원하지 않아요"); return; }
       try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ toast("마이크 사용을 허용해 주세요 🎤"); return; }
       const mime=pickMime();
@@ -231,8 +236,17 @@
       if(nxt>=0){ cur=nxt; } // 남은 장면으로
       render(true);
     }
-    async function previewScene(){ stopAllAudio(); const rec=await getClip(voice,cur); if(!rec){ toast("이 장면 녹음이 없어요"); return; }
-      previewAudio=new Audio(URL.createObjectURL(rec.blob)); previewAudio.play().catch(()=>toast("재생할 수 없어요")); }
+    async function togglePreview(){
+      if(previewPlaying){ stopPreview(); renderBottom(); return; }
+      const rec=await getClip(voice,cur); if(!rec){ toast("이 장면 녹음이 없어요"); return; }
+      stopPreview();
+      previewAudio=new Audio(URL.createObjectURL(rec.blob));
+      previewAudio.onended=()=>{ previewPlaying=false; renderBottom(); };
+      previewAudio.onerror=()=>{ previewPlaying=false; renderBottom(); toast("재생할 수 없어요"); };
+      previewPlaying=true; renderBottom();
+      previewAudio.play().catch(()=>{ previewPlaying=false; renderBottom(); toast("재생할 수 없어요"); });
+    }
+    function stopPreview(){ if(previewAudio){ try{previewAudio.pause()}catch(e){} previewAudio=null; } previewPlaying=false; }
 
     // ===== 들려주기 =====
     async function startPlay(from){ stopAllAudio(); paused=false; pauseOv.classList.add("hidden");
@@ -253,7 +267,7 @@
       if(paused){ paused=false; pauseOv.classList.add("hidden"); if(playAudio) playAudio.play().catch(()=>{}); }
       else { paused=true; pauseOv.classList.remove("hidden"); if(playAudio) playAudio.pause(); }
       renderBottom(); }
-    function stopAllAudio(){ playToken++; if(playAudio){ try{playAudio.pause()}catch(e){} playAudio=null; } if(previewAudio){ try{previewAudio.pause()}catch(e){} previewAudio=null; } playing=false; paused=false; }
+    function stopAllAudio(){ playToken++; if(playAudio){ try{playAudio.pause()}catch(e){} playAudio=null; } stopPreview(); playing=false; paused=false; }
 
     function go(i){ const t=Math.max(0,Math.min(i,N-1)); if(isPlayMode()&&playing){ startPlay(t); } else { stopAllAudio(); cur=t; render(true); } }
     prevEl.onclick=(e)=>{ e.stopPropagation(); if(!recording) go(cur-1); };
