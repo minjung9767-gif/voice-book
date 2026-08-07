@@ -110,11 +110,6 @@
     <div class="stage" id="stage">
       <div class="art scene-in" id="art">🐻</div>
       <div class="text scene-in" id="text"></div>
-      <div class="pause-ov hidden" id="pauseOv">
-        <div class="po-moon">🌙</div>
-        <div class="po-t">잠깐 쉬는 중이에요</div>
-        <div class="po-s">화면을 누르면 이어서 들려줄게요</div>
-      </div>
     </div>
 
     <div class="bottom" id="bottom"></div>
@@ -180,14 +175,14 @@
     let storyIdx=0, story=STORIES[storyIdx], N=story.scenes.length;
     const VLABEL = { mom:"엄마", dad:"아빠" };
 
-    let voice="mom", cur=0, forceRecord=false;
+    let voice="mom", cur=0;
     let recorder=null, chunks=[], stream=null, recording=false;
     let recorded=new Set();
-    let previewAudio=null, previewPlaying=false, playAudio=null, playing=false, paused=false, playToken=0;
+    let previewAudio=null, previewPlaying=false;
 
     const $=(id)=>document.getElementById(id);
     const artEl=$("art"), textEl=$("text"), progEl=$("prog"), bottomEl=$("bottom"),
-          pauseOv=$("pauseOv"), stageEl=$("stage"), toastEl=$("toast");
+          stageEl=$("stage"), toastEl=$("toast");
 
     (function(){ const sky=$("sky"); for(let i=0;i<40;i++){ const s=document.createElement("span"); s.className="star";
       s.style.left=(Math.random()*100).toFixed(1)+"%"; s.style.top=(Math.random()*100).toFixed(1)+"%";
@@ -216,7 +211,7 @@
 
     function allDone(){ for(let i=0;i<N;i++) if(!recorded.has(i)) return false; return true; }
     function doneCount(){ let c=0; for(let i=0;i<N;i++) if(recorded.has(i)) c++; return c; }
-    const isPlayMode = () => allDone() && !forceRecord;
+    // 이 화면은 '녹음 + 확인' 단일 모드 (아기에게 들려주는 자동재생은 여기 없음)
 
     function paintScene(anim){ const sc=story.scenes[cur];
       artEl.textContent=sc.emoji;
@@ -225,59 +220,42 @@
     }
 
     function renderTop(){
-      if(isPlayMode()){
-        progEl.innerHTML = `<button class="redo" id="reRec">🔴 다시 녹음</button>`;
-        $("reRec").onclick=()=>{ forceRecord=true; stopAllAudio(); cur=0; render(true); };
-      } else {
-        // 녹음 진행 표시 (맨 위, 버튼과 안 겹침)
-        let dots=""; for(let i=0;i<N;i++) dots+=`<span class="pd ${recorded.has(i)?'done':''} ${i===cur?'now':''}"></span>`;
-        progEl.innerHTML = `<span class="pdots">${dots}</span><span>${doneCount()} / ${N} 녹음</span>`;
-      }
+      if(recording){ progEl.innerHTML=`<span class="recing"><span class="recdot"></span>녹음 중… 다 읽으면 <b>멈춤</b></span>`; return; }
+      let dots=""; for(let i=0;i<N;i++) dots+=`<span class="pd ${recorded.has(i)?'done':''} ${i===cur?'now':''}"></span>`;
+      progEl.innerHTML = `<span class="pdots">${dots}</span><span>${doneCount()} / ${N} 녹음</span>`;
     }
 
     function renderBottom(){
-      // ===== 아기 화면(들려주기): 최대한 비움 =====
-      if(isPlayMode()){
-        if(playing){ bottomEl.innerHTML = `<div class="playhint">화면을 톡 누르면 잠깐 멈춰요</div>`; }
-        else { bottomEl.innerHTML = `<button class="main-btn play" id="bPlay">▶ 들려주기</button>`; const b=$("bPlay"); if(b) b.onclick=()=>startPlay(0); }
-        pauseOv.classList.toggle("hidden", !paused);
-        return;
-      }
-      // ===== 녹음 화면(부모) =====
-      if(recording){
-        bottomEl.innerHTML = `<button class="main-btn rec" id="bStop">■ 멈춤</button>`;
-        $("bStop").onclick=stopRec; pauseOv.classList.add("hidden"); return;
-      }
-      const has=recorded.has(cur);
-      // 넘김 = 가운데 아래 페이저 (①)
+      // 넘김 페이저는 녹음 중에도 유지(화살표만 비활성). 녹음 버튼은 항상 맨 아래 고정.
+      const recBtn = recording
+        ? `<button class="main-btn rec" id="bStop">■ 멈춤</button>`
+        : `<button class="main-btn rec" id="bRec">🔴 ${recorded.has(cur)?'이 장면 다시 녹음':'이 장면 녹음'}</button>`;
       let html = `<div class="pager">`+
-        `<button class="pnav" id="bPrev" ${cur===0?'disabled':''} aria-label="이전 장면">❮</button>`+
+        `<button class="pnav" id="bPrev" ${cur===0||recording?'disabled':''} aria-label="이전 장면">❮</button>`+
         `<span class="ppos">${cur+1} / ${N} 장면</span>`+
-        `<button class="pnav" id="bNext" ${cur===N-1?'disabled':''} aria-label="다음 장면">❯</button>`+
+        `<button class="pnav" id="bNext" ${cur===N-1||recording?'disabled':''} aria-label="다음 장면">❯</button>`+
       `</div>`;
-      if(has) html += `<button class="listen ${previewPlaying?'on':''}" id="bPrev2">${previewPlaying?'⏸ 멈추기':'▶ 들어보기'}</button>`;
-      if(allDone()) html += `<button class="done-note" id="bToPlay">✅ 다 녹음했어요 · ▶ 들려주기</button>`;
-      // 녹음 버튼은 항상 맨 아래 고정
-      html += `<button class="main-btn rec" id="bRec">🔴 ${has?'이 장면 다시 녹음':'이 장면 녹음'}</button>`;
+      if(recorded.has(cur) && !recording)
+        html += `<button class="listen ${previewPlaying?'on':''}" id="bConfirm">${previewPlaying?'⏸ 멈추기':'🔊 녹음 확인'}</button>`;
+      html += recBtn;
       bottomEl.innerHTML=html;
-      $("bPrev").onclick=()=>go(cur-1);
-      $("bNext").onclick=()=>go(cur+1);
-      const b3=$("bPrev2"); if(b3) b3.onclick=togglePreview;
-      const b4=$("bToPlay"); if(b4) b4.onclick=()=>{ forceRecord=false; cur=0; startPlay(0); };
-      $("bRec").onclick=startRec;
-      pauseOv.classList.add("hidden");
+      const bp=$("bPrev"); if(bp) bp.onclick=()=>go(cur-1);
+      const bn=$("bNext"); if(bn) bn.onclick=()=>go(cur+1);
+      const bc=$("bConfirm"); if(bc) bc.onclick=togglePreview;
+      const br=$("bRec"); if(br) br.onclick=startRec;
+      const bs=$("bStop"); if(bs) bs.onclick=stopRec;
     }
 
     function render(anim){ paintScene(anim); renderTop(); renderBottom(); }
 
-    async function setVoice(v){ if(v===voice||recording) return; stopAllAudio(); voice=v; cur=0; forceRecord=false;
+    async function setVoice(v){ if(v===voice||recording) return; stopAllAudio(); voice=v; cur=0;
       document.querySelectorAll(".vtab").forEach(t=>t.classList.toggle("on",t.dataset.voice===v));
       recorded=await loadRecorded(voice); render(true); }
 
     function updateSwitchTitle(){ const t=$("swTitle"); if(t) t.textContent=story.title; }
     async function switchStory(delta){ if(recording) return; stopAllAudio();
       storyIdx=(storyIdx+delta+STORIES.length)%STORIES.length; story=STORIES[storyIdx]; N=story.scenes.length;
-      cur=0; forceRecord=false; updateSwitchTitle(); recorded=await loadRecorded(voice); render(true); }
+      cur=0; updateSwitchTitle(); recorded=await loadRecorded(voice); render(true); }
 
     // ===== 녹음 =====
     async function startRec(){
@@ -288,8 +266,7 @@
       try{ recorder=mime? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream); }catch(e){ recorder=new MediaRecorder(stream); }
       chunks=[]; recorder.ondataavailable=(e)=>{ if(e.data&&e.data.size) chunks.push(e.data); };
       recorder.onstop=onStop; recorder.start(); recording=true;
-      progEl.innerHTML=`<span class="recing"><span class="recdot"></span>녹음 중… 다 읽으면 <b>멈춤</b></span>`;
-      renderBottom();
+      renderTop(); renderBottom();
     }
     function stopRec(){ if(recorder&&recorder.state!=="inactive") recorder.stop(); }
     async function onStop(){
@@ -315,31 +292,13 @@
     }
     function stopPreview(){ if(previewAudio){ try{previewAudio.pause()}catch(e){} previewAudio=null; } previewPlaying=false; }
 
-    // ===== 들려주기 =====
-    async function startPlay(from){ stopAllAudio(); paused=false; pauseOv.classList.add("hidden");
-      const token=++playToken; playing=true; cur=from; render(true); renderBottom(); playFrom(token,from); }
-    async function playFrom(token,i){ if(token!==playToken) return;
-      if(i>=N){ endPlay(token); return; }
-      cur=i; paintScene(true); renderTop();
-      const rec=await getClip(voice,i); if(token!==playToken) return;
-      if(!rec){ playFrom(token,i+1); return; }
-      playAudio=new Audio(URL.createObjectURL(rec.blob));
-      playAudio.onended=()=>{ if(token===playToken) playFrom(token,i+1); };
-      playAudio.onerror=()=>{ if(token===playToken) playFrom(token,i+1); };
-      try{ await playAudio.play(); }catch(e){}
-    }
-    function endPlay(token){ if(token!==playToken) return; playing=false; stopAllAudio();
-      artEl.textContent="😴"; textEl.innerHTML='<span class="ln"><span class="nm">잘 자요</span> 🌙</span>'; renderBottom(); }
-    function togglePause(){ if(!playing) return;
-      if(paused){ paused=false; pauseOv.classList.add("hidden"); if(playAudio) playAudio.play().catch(()=>{}); }
-      else { paused=true; pauseOv.classList.remove("hidden"); if(playAudio) playAudio.pause(); }
-      renderBottom(); }
-    function stopAllAudio(){ playToken++; if(playAudio){ try{playAudio.pause()}catch(e){} playAudio=null; } stopPreview(); playing=false; paused=false; }
+    function stopAllAudio(){ stopPreview(); }
 
-    function go(i){ const t=Math.max(0,Math.min(i,N-1)); if(isPlayMode()&&playing){ startPlay(t); } else { stopAllAudio(); cur=t; render(true); } }
-    stageEl.addEventListener("click",()=>{ if(isPlayMode()&&playing) togglePause(); });
-    document.addEventListener("keydown",(e)=>{ if(recording) return; if(e.key==="ArrowLeft") go(cur-1); else if(e.key==="ArrowRight") go(cur+1);
-      else if(e.code==="Space"){ e.preventDefault(); if(isPlayMode()&&playing) togglePause(); } });
+    // 장면 이동. 녹음 확인(미리듣기) 중이었다면, 옮긴 장면의 녹음을 바로 이어 들려줌(빠른 확인).
+    function go(i){ if(recording) return; const t=Math.max(0,Math.min(i,N-1)); if(t===cur) return;
+      const wasPreview=previewPlaying; stopPreview(); cur=t; render(true);
+      if(wasPreview && recorded.has(cur)) togglePreview(); }
+    document.addEventListener("keydown",(e)=>{ if(recording) return; if(e.key==="ArrowLeft") go(cur-1); else if(e.key==="ArrowRight") go(cur+1); });
     document.querySelectorAll(".vtab").forEach(t=>t.onclick=()=>setVoice(t.dataset.voice));
     $("sPrev").onclick=()=>switchStory(-1);
     $("sNext").onclick=()=>switchStory(1);
