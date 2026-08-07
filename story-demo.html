@@ -98,7 +98,7 @@
     .recing { color:#ff9aa6; } .recdot { display:inline-block; width:10px; height:10px; border-radius:50%; background:#ff6b7a; margin-right:5px; vertical-align:middle; animation:blink 1s infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
     .toast { position:fixed; left:50%; top:calc(20px + env(safe-area-inset-top)); transform:translateX(-50%) translateY(-10px);
-      background:rgba(0,0,0,.85); color:#fff; padding:11px 18px; border-radius:999px; font-size:15px; opacity:0; transition:.2s; z-index:20; pointer-events:none; }
+      background:rgba(0,0,0,.85); color:#fff; padding:11px 18px; border-radius:999px; font-size:15px; opacity:0; transition:.2s; z-index:40; pointer-events:none; }
     .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
     /* ===== 아기 들려주기(자동재생) 화면 ===== */
@@ -119,6 +119,29 @@
     .po-b { font-family:inherit; font-size:17px; padding:12px 20px; border-radius:16px; cursor:pointer;
       border:1px solid rgba(255,255,255,.24); background:rgba(255,255,255,.1); color:#e7e2f5; }
     .po-b:active { transform:scale(.96); }
+
+    /* ===== 홈 도구 버튼 · 모달(백업/복원) ===== */
+    .home-tools { position:absolute; top:calc(16px + env(safe-area-inset-top)); right:14px; z-index:2; }
+    .tool-btn { font-family:inherit; font-size:14px; padding:8px 14px; border-radius:999px; cursor:pointer;
+      border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#cdd3f5; }
+    .tool-btn:active { transform:scale(.94); }
+    .modal { position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; padding:18px;
+      background:rgba(4,6,20,.62); backdrop-filter:blur(2px); }
+    .modal[hidden] { display:none; }
+    .modal-card { width:100%; max-width:440px; max-height:86vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+      border-radius:22px; padding:22px 20px calc(20px + env(safe-area-inset-bottom));
+      background:linear-gradient(180deg,#161c47,#101538); border:1px solid rgba(255,255,255,.12); }
+    .modal-card h2 { font-family:"Jua",sans-serif; font-size:23px; color:#ffe9b3; margin-bottom:10px; }
+    .modal-card p { font-size:15px; line-height:1.6; color:#cdd3f5; margin-bottom:12px; }
+    .modal-card p b { color:#ffe9b3; }
+    .modal-h3 { font-family:"Jua",sans-serif; font-size:18px; color:#f3efff; margin:2px 0 8px; }
+    .modal-btn { font-family:inherit; font-size:17px; border:none; border-radius:16px; padding:14px 18px; cursor:pointer; width:100%; margin-top:6px; }
+    .modal-btn:active { transform:scale(.98); }
+    .modal-btn.gold { background:#ffe9b3; color:#3a2f10; }
+    .modal-btn.ghost { background:rgba(255,255,255,.08); color:#e7e2f5; border:1px solid rgba(255,255,255,.2); }
+    .modal-hr { border:none; border-top:1px solid rgba(255,255,255,.12); margin:16px 0; }
+    .modal-hint { font-size:13px; color:#9aa3d8; margin-top:8px; line-height:1.55; }
+    .modal-hint b { color:#cdd3f5; }
   </style>
 </head>
 <body>
@@ -126,6 +149,7 @@
 
   <!-- 홈: 이야기 고르기 -->
   <section class="home" id="home">
+    <div class="home-tools"><button class="tool-btn" id="btnBackup">🛟 백업·복원</button></div>
     <div class="home-head">
       <div class="home-title">별밤책</div>
       <div class="home-sub">오늘은 어떤 이야기를 들려줄까요?</div>
@@ -164,6 +188,12 @@
       <div class="pause-ov hidden" id="pauseOv"></div>
     </div>
   </div>
+
+  <!-- 백업/복원 모달 -->
+  <div class="modal" id="modal" hidden>
+    <div class="modal-card" id="modalCard"></div>
+  </div>
+  <input type="file" id="restoreInput" accept=".txt,text/plain,application/json" hidden />
 
   <div class="toast" id="toast"></div>
 
@@ -238,6 +268,7 @@
     const artEl=$("art"), textEl=$("text"), progEl=$("prog"), bottomEl=$("bottom"),
           stageEl=$("stage"), toastEl=$("toast");
     const playViewEl=$("playView"), pStageEl=$("pStage"), pArtEl=$("pArt"), pTextEl=$("pText"), pauseOvEl=$("pauseOv");
+    const modalEl=$("modal"), modalCardEl=$("modalCard"), restoreInput=$("restoreInput");
 
     (function(){ const sky=$("sky"); for(let i=0;i<40;i++){ const s=document.createElement("span"); s.className="star";
       s.style.left=(Math.random()*100).toFixed(1)+"%"; s.style.top=(Math.random()*100).toFixed(1)+"%";
@@ -269,6 +300,13 @@
           if(ver!==STORE_VER) return; if(v!=="mom"&&v!=="dad") return; if(!(idx>=0)) return;
           (map[sid]=map[sid]||{mom:new Set(),dad:new Set()})[v].add(idx); });
         res(map); }; t.onerror=()=>rej(t.error); }); }
+    // 백업/복원용: 모든 레코드 통째로 읽기 / 키 그대로 쓰기(합치기)
+    async function dbAllRecords(){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips").objectStore("clips").getAll();
+      t.onsuccess=()=>res(t.result||[]); t.onerror=()=>rej(t.error); }); }
+    async function putRaw(rec){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips","readwrite").objectStore("clips").put(rec); t.onsuccess=()=>res(); t.onerror=()=>rej(t.error); }); }
+    function blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); }); }
+    function downloadBlob(blob,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name;
+      document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); }
 
     function pickMime(){ const c=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/aac","audio/ogg;codecs=opus"];
       if(window.MediaRecorder&&MediaRecorder.isTypeSupported){ for(const t of c) if(MediaRecorder.isTypeSupported(t)) return t; } return ""; }
@@ -389,6 +427,81 @@
     pStageEl.onclick=()=>{ if(pbState==="playing") pbPause(); };
     pauseOvEl.onclick=(e)=>{ e.stopPropagation(); if(pbState==="paused") pbResume(); };
 
+    // ===== 백업 / 복원 =====
+    // 원리: 모든 장면 클립 → base64로 .txt 하나. 복원 = '합치기'(같은 키는 덮어쓰고, 없던 키는 추가).
+    //   → 엄마·아빠가 서로 백업 파일을 주고받아 복원하면 두 목소리가 한 폰에 합쳐짐(각자 녹음 안 해도 됨).
+    let backupReady=null, backupBuilding=false;
+    function updateBackupHint(){ const h=$("backupHint"); if(!h) return;
+      if(backupBuilding||!backupReady){ h.textContent="백업 파일을 준비하고 있어요…"; return; }
+      if(backupReady.empty){ h.textContent="아직 백업할 녹음이 없어요."; return; }
+      h.innerHTML="준비 완료 — <b>"+backupReady.count+"개</b> 녹음을 보낼 수 있어요."; }
+    async function buildBackup(){
+      backupReady=null; backupBuilding=true; updateBackupHint();
+      try{
+        const all=await dbAllRecords();
+        if(!all.length){ backupReady={empty:true,count:0}; return; }
+        const clips=[];
+        for(const r of all){ if(!r||!r.key||!r.blob) continue;
+          clips.push({ key:r.key, mime:r.mime||r.blob.type||"audio/webm", data:await blobToDataURL(r.blob) }); }
+        const payload={ app:"별밤책", kind:"scene-clips", version:2, exportedAt:Date.now(), clips };
+        const blob=new Blob([JSON.stringify(payload)],{type:"text/plain"});
+        const file=new File([blob],"별밤책-백업.txt",{type:"text/plain"});
+        backupReady={ file, blob, count:clips.length };
+      }catch(e){ backupReady=null; } finally { backupBuilding=false; updateBackupHint(); }
+    }
+    async function sendBackup(){
+      if(backupBuilding||!backupReady){ toast("백업을 준비하고 있어요. 잠깐 뒤 다시 눌러주세요"); return; }
+      if(backupReady.empty){ toast("백업할 녹음이 없어요"); return; }
+      const { file, blob, count }=backupReady;
+      try{
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          await navigator.share({ files:[file], title:"별밤책 백업", text:"별밤책 녹음 백업 파일이에요. 카톡 '나에게'에 보관하면 폰을 바꿔도 안전해요." });
+          toast(count+"개 백업을 보냈어요 🛟  (카톡 '나에게' 추천)"); return;
+        }
+      }catch(e){ if(e&&e.name==="AbortError") return; }
+      downloadBlob(blob,"별밤책-백업.txt");
+      toast("공유창이 안 떠서 파일로 저장했어요. 안 되면 사파리·크롬으로 열어 다시 해주세요");
+    }
+    async function restoreFromFile(file){
+      if(!file) return;
+      try{
+        const payload=JSON.parse(await file.text());
+        const list = payload && Array.isArray(payload.clips) ? payload.clips : null;
+        if(!list){ toast("별밤책 백업 파일이 아니에요"); return; }
+        let n=0;
+        for(const it of list){ if(!it||!it.key||!it.data) continue;
+          const blob=await (await fetch(it.data)).blob();
+          await putRaw({ key:it.key, blob, mime:it.mime||blob.type }); n++; }
+        toast(n+"개 녹음을 되살렸어요 🛟");
+        if(homeEl.style.display!=="none") await renderHome();
+        else if(recViewEl.style.display!=="none"){ recorded=await loadRecorded(voice); render(false); }
+      }catch(e){ toast("복원에 실패했어요 (파일을 확인해 주세요)"); }
+    }
+
+    function openModal(html){ modalCardEl.innerHTML=html; modalEl.hidden=false; }
+    function closeModal(){ modalEl.hidden=true; modalCardEl.innerHTML=""; }
+    function openBackup(){
+      openModal(
+        `<h2>녹음 백업 · 복원 🛟</h2>`+
+        `<p>녹음은 이 기기 안에만 있어요. <b>카카오톡 '나에게 보내기'</b>로 백업해 두면, 폰을 바꾸거나 실수로 지워져도 다시 <b>복원</b>할 수 있어요.</p>`+
+        `<p>💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>두 목소리가 한 폰에 합쳐져요.</b></p>`+
+        `<button class="modal-btn gold" id="doBackup">💬 백업 파일 보내기</button>`+
+        `<p class="modal-hint" id="backupHint">백업 파일을 준비하고 있어요…</p>`+
+        `<hr class="modal-hr">`+
+        `<div class="modal-h3">📥 복원하기 (백업에서 되살리기)</div>`+
+        `<p class="modal-hint">카톡 <b>나에게</b>에서 <b>별밤책-백업.txt</b>를 눌러 → <b>공유 → "파일에 저장"</b> 한 뒤, 아래 버튼으로 그 파일을 고르세요.</p>`+
+        `<button class="modal-btn ghost" id="doRestore">📥 백업 파일에서 복원</button>`+
+        `<p class="modal-hint">※ <b>카톡·인스타 안</b>에서 열면 백업이 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.</p>`+
+        `<button class="modal-btn ghost" id="doClose" style="margin-top:14px">닫기</button>`
+      );
+      $("doBackup").onclick=sendBackup;
+      $("doRestore").onclick=()=>restoreInput.click();
+      $("doClose").onclick=closeModal;
+      buildBackup(); // 열자마자 파일 준비 → '보내기' 누르는 즉시 공유창(아이폰 gesture 대응)
+    }
+    modalEl.onclick=(e)=>{ if(e.target===modalEl) closeModal(); };
+    restoreInput.onchange=(e)=>{ restoreFromFile(e.target.files[0]); e.target.value=""; };
+
     // ===== 녹음 화면 렌더 =====
     function paintScene(anim){ const sc=story.scenes[cur];
       artEl.textContent=sc.emoji;
@@ -474,6 +587,7 @@
       if(e.key==="ArrowLeft") go(cur-1); else if(e.key==="ArrowRight") go(cur+1); });
     document.querySelectorAll(".vtab").forEach(t=>t.onclick=()=>setVoice(t.dataset.voice));
     $("btnHome").onclick=showHome;
+    $("btnBackup").onclick=openBackup;
 
     // 시작: 홈부터
     showHome();
