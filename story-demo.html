@@ -146,16 +146,19 @@
     let dbp=null;
     function db(){ if(dbp) return dbp; dbp=new Promise((res,rej)=>{ const r=indexedDB.open("voicebook-demo",1);
       r.onupgradeneeded=()=>r.result.createObjectStore("clips",{keyPath:"key"}); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); return dbp; }
-    const key=(v,i)=>`${STORY.id}:${v}:${i}`;
+    const STORE_VER="v2"; // 이전 시범(12장면) 데이터와 섞이지 않게 버전 분리
+    const key=(v,i)=>`${STORY.id}:${STORE_VER}:${v}:${i}`;
     async function getClip(v,i){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips").objectStore("clips").get(key(v,i)); t.onsuccess=()=>res(t.result||null); t.onerror=()=>rej(t.error); }); }
     async function putClip(v,i,blob,mime){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips","readwrite").objectStore("clips").put({key:key(v,i),blob,mime}); t.onsuccess=()=>res(); t.onerror=()=>rej(t.error); }); }
     async function loadRecorded(v){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips").objectStore("clips").getAllKeys();
-      t.onsuccess=()=>{ const pre=`${STORY.id}:${v}:`; res(new Set((t.result||[]).filter(k=>k.indexOf(pre)===0).map(k=>+k.slice(pre.length)))); }; t.onerror=()=>rej(t.error); }); }
+      t.onsuccess=()=>{ const pre=`${STORY.id}:${STORE_VER}:${v}:`; res(new Set((t.result||[]).filter(k=>k.indexOf(pre)===0).map(k=>+k.slice(pre.length)).filter(i=>i>=0&&i<N))); }; t.onerror=()=>rej(t.error); }); }
 
     function pickMime(){ const c=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/aac","audio/ogg;codecs=opus"];
       if(window.MediaRecorder&&MediaRecorder.isTypeSupported){ for(const t of c) if(MediaRecorder.isTypeSupported(t)) return t; } return ""; }
 
-    const isPlayMode = () => recorded.size===N && !forceRecord;
+    function allDone(){ for(let i=0;i<N;i++) if(!recorded.has(i)) return false; return true; }
+    function doneCount(){ let c=0; for(let i=0;i<N;i++) if(recorded.has(i)) c++; return c; }
+    const isPlayMode = () => allDone() && !forceRecord;
 
     function paintScene(anim){ const sc=STORY.scenes[cur];
       artEl.textContent=sc.emoji;
@@ -171,7 +174,7 @@
       } else {
         // 녹음 진행 표시 (맨 위, 버튼과 안 겹침)
         let dots=""; for(let i=0;i<N;i++) dots+=`<span class="pd ${recorded.has(i)?'done':''} ${i===cur?'now':''}"></span>`;
-        progEl.innerHTML = `<span class="pdots">${dots}</span><span>${recorded.size} / ${N} 녹음</span>`;
+        progEl.innerHTML = `<span class="pdots">${dots}</span><span>${doneCount()} / ${N} 녹음</span>`;
       }
     }
 
@@ -188,7 +191,7 @@
         } else {
           html = `<button class="main-btn rec" id="bRec">🔴 ${has?'이 장면 다시 녹음':'이 장면 녹음'}</button>`;
           if(has) html += `<button class="sub link" id="bPrev2">▶ 들어보기</button>`;
-          if(recorded.size===N) html += `<button class="done-note" id="bToPlay">✅ 다 녹음했어요 · ▶ 들려주기</button>`;
+          if(allDone()) html += `<button class="done-note" id="bToPlay">✅ 다 녹음했어요 · ▶ 들려주기</button>`;
         }
         bottomEl.innerHTML=html;
         const b1=$("bRec"); if(b1) b1.onclick=startRec;
