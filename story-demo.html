@@ -35,12 +35,17 @@
     .scover { font-size:40px; line-height:1; flex:none; width:52px; text-align:center; filter:drop-shadow(0 4px 10px rgba(0,0,0,.4)); }
     .sinfo { flex:1; display:flex; flex-direction:column; gap:6px; min-width:0; }
     .sname { font-family:"Jua",sans-serif; font-size:21px; color:#f3efff; }
-    .spills { display:flex; gap:8px; }
-    .spill { font-size:13px; padding:3px 10px; border-radius:999px; color:#9aa3d8;
+    .spills { display:flex; gap:8px; flex-wrap:wrap; }
+    .spill { font-size:13px; padding:3px 10px; border-radius:999px; color:#9aa3d8; white-space:nowrap;
       background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); }
     .spill.part { color:#ffe4b0; border-color:rgba(255,233,179,.35); background:rgba(255,233,179,.1); }
     .spill.full { color:#bff0da; border-color:rgba(116,211,171,.5); background:rgba(116,211,171,.16); }
     .schev { font-size:22px; color:#ffe9b3; flex:none; }
+    .schev.play { color:#74d3ab; }
+    .sright { display:flex; align-items:center; gap:10px; flex:none; }
+    .reBtn { font-family:inherit; font-size:18px; width:42px; height:42px; border-radius:50%; cursor:pointer; flex:none;
+      border:1px solid rgba(255,233,179,.4); background:rgba(255,233,179,.12); color:#ffe9b3; }
+    .reBtn:active { transform:scale(.9); }
 
     /* ===== 녹음+확인 화면 ===== */
     .app { position:fixed; inset:0; z-index:1; display:flex; flex-direction:column; }
@@ -95,6 +100,25 @@
     .toast { position:fixed; left:50%; top:calc(20px + env(safe-area-inset-top)); transform:translateX(-50%) translateY(-10px);
       background:rgba(0,0,0,.85); color:#fff; padding:11px 18px; border-radius:999px; font-size:15px; opacity:0; transition:.2s; z-index:20; pointer-events:none; }
     .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+    /* ===== 아기 들려주기(자동재생) 화면 ===== */
+    .play-view { position:fixed; inset:0; z-index:1; display:flex; flex-direction:column; }
+    .play-view .stage { cursor:pointer; }
+    .pause-ov { position:absolute; inset:0; z-index:9; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:14px; padding:24px; text-align:center; background:rgba(8,11,32,.8); backdrop-filter:blur(3px); }
+    .pause-ov.hidden { display:none; }
+    .po-moon { font-size:clamp(3rem,12vmin,6rem); animation:bob 2.4s ease-in-out infinite; }
+    @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+    .po-t { font-family:"Jua",sans-serif; font-size:23px; color:#ffe9b3; }
+    .po-s { font-size:14px; color:#aab2e0; margin-top:-4px; }
+    .po-voices { display:flex; gap:10px; margin-top:4px; }
+    .po-v { font-family:inherit; font-size:16px; padding:8px 18px; border-radius:999px; cursor:pointer;
+      border:1px solid rgba(255,255,255,.22); background:rgba(255,255,255,.08); color:#cdd3f5; }
+    .po-v.on { background:#ffe9b3; border-color:#ffe9b3; color:#3a2f10; }
+    .po-btns { display:flex; gap:12px; margin-top:8px; flex-wrap:wrap; justify-content:center; }
+    .po-b { font-family:inherit; font-size:17px; padding:12px 20px; border-radius:16px; cursor:pointer;
+      border:1px solid rgba(255,255,255,.24); background:rgba(255,255,255,.1); color:#e7e2f5; }
+    .po-b:active { transform:scale(.96); }
   </style>
 </head>
 <body>
@@ -130,6 +154,15 @@
     </div>
 
     <div class="bottom" id="bottom"></div>
+  </div>
+
+  <!-- 아기 들려주기(자동재생) 화면 -->
+  <div class="play-view" id="playView" style="display:none">
+    <div class="stage" id="pStage">
+      <div class="art scene-in" id="pArt">🐻</div>
+      <div class="text scene-in" id="pText"></div>
+      <div class="pause-ov hidden" id="pauseOv"></div>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -197,11 +230,14 @@
     let recorder=null, chunks=[], stream=null, recording=false;
     let recorded=new Set();
     let previewAudio=null, previewPlaying=false;
+    // 들려주기(자동재생) 상태
+    let pbVoice="mom", pbIndex=0, pbAudio=null, pbState="idle", pbBoth=false; // pbState: idle|playing|paused|ended
 
     const $=(id)=>document.getElementById(id);
     const homeEl=$("home"), recViewEl=$("recView"), storyListEl=$("storyList"), recTitleEl=$("recTitle");
     const artEl=$("art"), textEl=$("text"), progEl=$("prog"), bottomEl=$("bottom"),
           stageEl=$("stage"), toastEl=$("toast");
+    const playViewEl=$("playView"), pStageEl=$("pStage"), pArtEl=$("pArt"), pTextEl=$("pText"), pauseOvEl=$("pauseOv");
 
     (function(){ const sky=$("sky"); for(let i=0;i<40;i++){ const s=document.createElement("span"); s.className="star";
       s.style.left=(Math.random()*100).toFixed(1)+"%"; s.style.top=(Math.random()*100).toFixed(1)+"%";
@@ -250,29 +286,108 @@
         const mc=cnt(p.mom), dc=cnt(p.dad);
         const cls=(c)=> c===0?'' : (c>=sN?'full':'part');
         const pill=(icon,label,c)=>`<span class="spill ${cls(c)}">${icon} ${label} ${c}/${sN}</span>`;
-        return `<li class="scard" data-idx="${i}">`+
+        // 완성(전체 녹음)된 목소리 판별 → 있으면 '들려주기', 없으면 '녹음하기'
+        const momFull=mc>=sN, dadFull=dc>=sN;
+        const play = (momFull&&dadFull)?'both' : momFull?'mom' : dadFull?'dad' : 'none';
+        const right = play!=='none'
+          ? `<span class="sright"><button class="reBtn" data-idx="${i}" aria-label="녹음 고치기">🎙</button><span class="schev play">▶</span></span>`
+          : `<span class="schev">❯</span>`;
+        return `<li class="scard" data-idx="${i}" data-play="${play}">`+
           `<span class="scover">${s.cover}</span>`+
           `<span class="sinfo"><span class="sname">${s.title}</span>`+
           `<span class="spills">${pill('👩','엄마',mc)}${pill('👨','아빠',dc)}</span></span>`+
-          `<span class="schev">❯</span></li>`;
+          right+`</li>`;
       }).join("");
-      storyListEl.querySelectorAll(".scard").forEach(el=>el.onclick=()=>openStory(+el.dataset.idx));
+      // 줄 전체 = 완성됐으면 들려주기 / 아니면 녹음하기
+      storyListEl.querySelectorAll(".scard").forEach(el=>el.onclick=()=>{
+        const i=+el.dataset.idx, pl=el.dataset.play;
+        if(pl==='none') openStory(i); else openPlay(i,pl);
+      });
+      // 🎙 = 녹음 고치기(아기 화면과 완전 분리, 홈에서만 접근)
+      storyListEl.querySelectorAll(".reBtn").forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); openStory(+el.dataset.idx); });
     }
 
     async function showHome(){
       if(recording){ toast("녹음을 먼저 멈춰 주세요"); return; }
-      stopAllAudio();
-      recViewEl.style.display="none"; homeEl.style.display="flex";
+      stopAllAudio(); stopPlayback();
+      recViewEl.style.display="none"; playViewEl.style.display="none"; homeEl.style.display="flex";
       await renderHome();
     }
 
     async function openStory(i){
-      stopAllAudio();
+      stopAllAudio(); stopPlayback();
       storyIdx=i; story=STORIES[i]; N=story.scenes.length; cur=0;
       recTitleEl.textContent=story.title;
-      homeEl.style.display="none"; recViewEl.style.display="flex";
+      homeEl.style.display="none"; playViewEl.style.display="none"; recViewEl.style.display="flex";
       recorded=await loadRecorded(voice); render(true);
     }
+
+    // ===== 아기 들려주기(자동재생) =====
+    // 홈에서 '완성된' 이야기를 눌러 진입. 장면 클립을 순서대로 자동 재생하며 그림도 함께 넘어감.
+    // 화면 탭 = 멈춤/이어보기. 녹음으로 가는 길은 여기 없음(아기 안전).
+    function openPlay(i, avail){
+      stopAllAudio(); stopPlayback();
+      storyIdx=i; story=STORIES[i]; N=story.scenes.length;
+      pbVoice = (avail==='dad') ? 'dad' : 'mom';   // 둘 다면 기본 엄마
+      pbBoth  = (avail==='both');
+      homeEl.style.display="none"; recViewEl.style.display="none"; playViewEl.style.display="flex";
+      hidePauseOv(); pbIndex=0; playCurrent();
+    }
+
+    function paintPlayScene(anim){ const sc=story.scenes[pbIndex];
+      pArtEl.textContent=sc.emoji;
+      pTextEl.innerHTML = sc.lines.map(l=>`<span class="ln">${renderName(l)}</span>`).join("");
+      if(anim){ [pArtEl,pTextEl].forEach(el=>{ el.classList.remove("scene-in"); void el.offsetWidth; el.classList.add("scene-in"); }); }
+    }
+
+    async function playCurrent(){
+      hidePauseOv(); paintPlayScene(true); pbState="playing";
+      let rec=null; try{ rec=await getClip(pbVoice,pbIndex); }catch(e){}
+      if(pbState!=="playing") return; // 로딩 중 멈췄으면 중단
+      if(!rec){ pbAdvance(); return; } // 혹시 빈 장면이면 건너뜀
+      stopPbAudio();
+      pbAudio=new Audio(URL.createObjectURL(rec.blob));
+      pbAudio.onended=()=>{ pbAdvance(); };
+      pbAudio.onerror=()=>{ pbAdvance(); };
+      pbAudio.play().catch(()=>{ /* 자동재생 차단 시 조용히 무시 */ });
+    }
+    function pbAdvance(){ if(pbState!=="playing") return;
+      if(pbIndex < N-1){ pbIndex++; playCurrent(); } else { pbEnd(); } }
+
+    function pbPause(){ if(pbAudio){ try{pbAudio.pause()}catch(e){} } pbState="paused"; showPauseOv("paused"); }
+    function pbResume(){ hidePauseOv(); pbState="playing"; if(pbAudio){ pbAudio.play().catch(()=>{}); } else playCurrent(); }
+    function pbRestart(){ hidePauseOv(); stopPbAudio(); pbAudio=null; pbIndex=0; pbState="playing"; playCurrent(); }
+    function pbEnd(){ stopPbAudio(); pbState="ended"; showPauseOv("ended"); }
+    function pbSwitchVoice(v){ if(v===pbVoice) return; pbVoice=v; stopPbAudio(); pbAudio=null; showPauseOv("paused"); }
+
+    function stopPbAudio(){ if(pbAudio){ try{pbAudio.pause()}catch(e){} pbAudio=null; } }
+    function stopPlayback(){ stopPbAudio(); pbState="idle"; hidePauseOv(); }
+
+    function hidePauseOv(){ pauseOvEl.classList.add("hidden"); pauseOvEl.innerHTML=""; }
+    function showPauseOv(kind){
+      let html="";
+      if(kind==="paused"){
+        html += `<div class="po-moon">🌙</div><div class="po-t">잠깐 멈췄어요</div>`+
+                `<div class="po-s">화면을 다시 누르면 이어서 들려줘요</div>`;
+        if(pbBoth) html += `<div class="po-voices">`+
+          `<button class="po-v ${pbVoice==='mom'?'on':''}" data-v="mom">👩 엄마</button>`+
+          `<button class="po-v ${pbVoice==='dad'?'on':''}" data-v="dad">👨 아빠</button></div>`;
+        html += `<div class="po-btns"><button class="po-b" data-a="home">🏠 목록으로</button>`+
+                `<button class="po-b" data-a="restart">🔁 처음부터</button></div>`;
+      } else { // ended
+        html += `<div class="po-moon">💤</div><div class="po-t">다 읽었어요</div>`+
+                `<div class="po-btns"><button class="po-b" data-a="home">🏠 목록으로</button>`+
+                `<button class="po-b" data-a="restart">🔁 다시 들려주기</button></div>`;
+      }
+      pauseOvEl.innerHTML=html; pauseOvEl.classList.remove("hidden");
+      pauseOvEl.querySelectorAll(".po-v").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); pbSwitchVoice(b.dataset.v); });
+      pauseOvEl.querySelectorAll(".po-b").forEach(b=>b.onclick=(e)=>{ e.stopPropagation();
+        if(b.dataset.a==="home") showHome(); else pbRestart(); });
+    }
+
+    // 화면(무대) 탭: 재생 중이면 멈춤. 멈춤 오버레이 배경 탭 = 이어보기.
+    pStageEl.onclick=()=>{ if(pbState==="playing") pbPause(); };
+    pauseOvEl.onclick=(e)=>{ e.stopPropagation(); if(pbState==="paused") pbResume(); };
 
     // ===== 녹음 화면 렌더 =====
     function paintScene(anim){ const sc=story.scenes[cur];
