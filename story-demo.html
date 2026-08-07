@@ -118,8 +118,8 @@
         <span style="width:40px;flex:none"></span>
       </div>
       <div class="voices">
-        <button class="vtab on" data-voice="mom">🌷 엄마</button>
-        <button class="vtab" data-voice="dad">🌰 아빠</button>
+        <button class="vtab on" data-voice="mom">👩 엄마</button>
+        <button class="vtab" data-voice="dad">👨 아빠</button>
       </div>
       <div class="prog" id="prog"></div>
     </div>
@@ -249,11 +249,11 @@
         const cnt=(set)=>{ let c=0; set.forEach(x=>{ if(x>=0&&x<sN) c++; }); return c; };
         const mc=cnt(p.mom), dc=cnt(p.dad);
         const cls=(c)=> c===0?'' : (c>=sN?'full':'part');
-        const pill=(emoji,c)=>`<span class="spill ${cls(c)}">${emoji} ${c}/${sN}</span>`;
+        const pill=(icon,label,c)=>`<span class="spill ${cls(c)}">${icon} ${label} ${c}/${sN}</span>`;
         return `<li class="scard" data-idx="${i}">`+
           `<span class="scover">${s.cover}</span>`+
           `<span class="sinfo"><span class="sname">${s.title}</span>`+
-          `<span class="spills">${pill('🌷',mc)}${pill('🌰',dc)}</span></span>`+
+          `<span class="spills">${pill('👩','엄마',mc)}${pill('👨','아빠',dc)}</span></span>`+
           `<span class="schev">❯</span></li>`;
       }).join("");
       storyListEl.querySelectorAll(".scard").forEach(el=>el.onclick=()=>openStory(+el.dataset.idx));
