@@ -45,21 +45,22 @@
 
     /* 무대 */
     .stage { flex:1; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
-      gap:22px; padding:2vh 15vw; text-align:center; }
-    .art { font-size:clamp(4.5rem,22vmin,10rem); line-height:1.1; filter:drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
-    .text { max-width:760px; }
-    .ln { display:block; font-size:clamp(1.25rem,4.8vmin,1.9rem); line-height:1.7; color:#e7e2f5;
-      text-shadow:0 2px 8px rgba(0,0,0,.5); word-break:keep-all; margin-bottom:6px; }
+      gap:20px; padding:2vh 5vw; text-align:center; }
+    .art { font-size:clamp(4.2rem,20vmin,9rem); line-height:1.1; filter:drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
+    .text { max-width:640px; }
+    .ln { display:block; font-size:clamp(1.05rem,4.5vmin,1.5rem); line-height:1.65; color:#e7e2f5;
+      text-shadow:0 2px 8px rgba(0,0,0,.5); word-break:keep-all; margin-bottom:5px; }
     .ln .nm { color:#ffe9b3; white-space:nowrap; }
     .scene-in { animation:fin .7s ease both; }
     @keyframes fin { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
 
-    .nav { position:absolute; top:50%; transform:translateY(-50%); z-index:5;
-      width:clamp(44px,11vw,60px); height:clamp(44px,11vw,60px); border-radius:50%;
+    .pager { display:flex; align-items:center; justify-content:center; gap:20px; }
+    .pnav { width:46px; height:46px; border-radius:50%; cursor:pointer;
       border:1px solid rgba(255,255,255,.24); background:rgba(255,255,255,.1); color:#ffe9b3;
-      font-size:clamp(1.3rem,5vw,2rem); display:flex; align-items:center; justify-content:center; cursor:pointer; backdrop-filter:blur(4px); }
-    .prev { left:clamp(4px,2vw,18px); } .next { right:clamp(4px,2vw,18px); }
-    .nav:disabled { opacity:.22; } .nav:active { transform:translateY(-50%) scale(.9); }
+      font-size:20px; display:flex; align-items:center; justify-content:center; }
+    .pnav:disabled { opacity:.25; } .pnav:active { transform:scale(.9); }
+    .ppos { font-size:15px; color:#cdd3f5; min-width:84px; text-align:center; }
+    .playhint { font-size:14px; color:#9aa3d8; padding:6px 0; }
 
     /* 하단: 딱 필요한 버튼 하나 */
     .bottom { padding:14px 20px calc(20px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; align-items:center; gap:10px; }
@@ -107,8 +108,6 @@
     </div>
 
     <div class="stage" id="stage">
-      <button class="nav prev" id="prev" aria-label="이전 장면">❮</button>
-      <button class="nav next" id="next" aria-label="다음 장면">❯</button>
       <div class="art scene-in" id="art">🐻</div>
       <div class="text scene-in" id="text"></div>
       <div class="pause-ov hidden" id="pauseOv">
@@ -188,7 +187,7 @@
 
     const $=(id)=>document.getElementById(id);
     const artEl=$("art"), textEl=$("text"), progEl=$("prog"), bottomEl=$("bottom"),
-          prevEl=$("prev"), nextEl=$("next"), pauseOv=$("pauseOv"), stageEl=$("stage"), toastEl=$("toast");
+          pauseOv=$("pauseOv"), stageEl=$("stage"), toastEl=$("toast");
 
     (function(){ const sky=$("sky"); for(let i=0;i<40;i++){ const s=document.createElement("span"); s.className="star";
       s.style.left=(Math.random()*100).toFixed(1)+"%"; s.style.top=(Math.random()*100).toFixed(1)+"%";
@@ -223,7 +222,6 @@
       artEl.textContent=sc.emoji;
       textEl.innerHTML = sc.lines.map(l=>`<span class="ln">${renderName(l)}</span>`).join("");
       if(anim){ [artEl,textEl].forEach(el=>{ el.classList.remove("scene-in"); void el.offsetWidth; el.classList.add("scene-in"); }); }
-      prevEl.disabled = cur===0; nextEl.disabled = cur===N-1;
     }
 
     function renderTop(){
@@ -238,27 +236,36 @@
     }
 
     function renderBottom(){
+      // ===== 아기 화면(들려주기): 최대한 비움 =====
       if(isPlayMode()){
-        bottomEl.innerHTML = `<button class="main-btn play" id="bPlay">${playing?'⏸ 잠깐 멈춤':'▶ 들려주기'}</button>`;
-        $("bPlay").onclick=()=>{ if(playing) togglePause(); else startPlay(0); };
+        if(playing){ bottomEl.innerHTML = `<div class="playhint">화면을 톡 누르면 잠깐 멈춰요</div>`; }
+        else { bottomEl.innerHTML = `<button class="main-btn play" id="bPlay">▶ 들려주기</button>`; const b=$("bPlay"); if(b) b.onclick=()=>startPlay(0); }
         pauseOv.classList.toggle("hidden", !paused);
-      } else {
-        const has=recorded.has(cur);
-        let html="";
-        if(recording){
-          html = `<button class="main-btn rec" id="bStop">■ 멈춤</button>`;
-        } else {
-          html = `<button class="main-btn rec" id="bRec">🔴 ${has?'이 장면 다시 녹음':'이 장면 녹음'}</button>`;
-          if(has) html += `<button class="listen ${previewPlaying?'on':''}" id="bPrev2">${previewPlaying?'⏸ 멈추기':'▶ 들어보기'}</button>`;
-          if(allDone()) html += `<button class="done-note" id="bToPlay">✅ 다 녹음했어요 · ▶ 들려주기</button>`;
-        }
-        bottomEl.innerHTML=html;
-        const b1=$("bRec"); if(b1) b1.onclick=startRec;
-        const b2=$("bStop"); if(b2) b2.onclick=stopRec;
-        const b3=$("bPrev2"); if(b3) b3.onclick=togglePreview;
-        const b4=$("bToPlay"); if(b4) b4.onclick=()=>{ forceRecord=false; cur=0; startPlay(0); };
-        pauseOv.classList.add("hidden");
+        return;
       }
+      // ===== 녹음 화면(부모) =====
+      if(recording){
+        bottomEl.innerHTML = `<button class="main-btn rec" id="bStop">■ 멈춤</button>`;
+        $("bStop").onclick=stopRec; pauseOv.classList.add("hidden"); return;
+      }
+      const has=recorded.has(cur);
+      // 넘김 = 가운데 아래 페이저 (①)
+      let html = `<div class="pager">`+
+        `<button class="pnav" id="bPrev" ${cur===0?'disabled':''} aria-label="이전 장면">❮</button>`+
+        `<span class="ppos">${cur+1} / ${N} 장면</span>`+
+        `<button class="pnav" id="bNext" ${cur===N-1?'disabled':''} aria-label="다음 장면">❯</button>`+
+      `</div>`;
+      if(has) html += `<button class="listen ${previewPlaying?'on':''}" id="bPrev2">${previewPlaying?'⏸ 멈추기':'▶ 들어보기'}</button>`;
+      if(allDone()) html += `<button class="done-note" id="bToPlay">✅ 다 녹음했어요 · ▶ 들려주기</button>`;
+      // 녹음 버튼은 항상 맨 아래 고정
+      html += `<button class="main-btn rec" id="bRec">🔴 ${has?'이 장면 다시 녹음':'이 장면 녹음'}</button>`;
+      bottomEl.innerHTML=html;
+      $("bPrev").onclick=()=>go(cur-1);
+      $("bNext").onclick=()=>go(cur+1);
+      const b3=$("bPrev2"); if(b3) b3.onclick=togglePreview;
+      const b4=$("bToPlay"); if(b4) b4.onclick=()=>{ forceRecord=false; cur=0; startPlay(0); };
+      $("bRec").onclick=startRec;
+      pauseOv.classList.add("hidden");
     }
 
     function render(anim){ paintScene(anim); renderTop(); renderBottom(); }
@@ -330,9 +337,7 @@
     function stopAllAudio(){ playToken++; if(playAudio){ try{playAudio.pause()}catch(e){} playAudio=null; } stopPreview(); playing=false; paused=false; }
 
     function go(i){ const t=Math.max(0,Math.min(i,N-1)); if(isPlayMode()&&playing){ startPlay(t); } else { stopAllAudio(); cur=t; render(true); } }
-    prevEl.onclick=(e)=>{ e.stopPropagation(); if(!recording) go(cur-1); };
-    nextEl.onclick=(e)=>{ e.stopPropagation(); if(!recording) go(cur+1); };
-    stageEl.addEventListener("click",(e)=>{ if(e.target===prevEl||e.target===nextEl) return; if(isPlayMode()&&playing) togglePause(); });
+    stageEl.addEventListener("click",()=>{ if(isPlayMode()&&playing) togglePause(); });
     document.addEventListener("keydown",(e)=>{ if(recording) return; if(e.key==="ArrowLeft") go(cur-1); else if(e.key==="ArrowRight") go(cur+1);
       else if(e.code==="Space"){ e.preventDefault(); if(isPlayMode()&&playing) togglePause(); } });
     document.querySelectorAll(".vtab").forEach(t=>t.onclick=()=>setVoice(t.dataset.voice));
