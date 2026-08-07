@@ -120,11 +120,18 @@
       border:1px solid rgba(255,255,255,.24); background:rgba(255,255,255,.1); color:#e7e2f5; }
     .po-b:active { transform:scale(.96); }
 
-    /* ===== 홈 도구 버튼 · 모달(백업/복원) ===== */
-    .home-tools { position:absolute; top:calc(16px + env(safe-area-inset-top)); right:14px; z-index:2; }
-    .tool-btn { font-family:inherit; font-size:14px; padding:8px 14px; border-radius:999px; cursor:pointer;
-      border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#cdd3f5; }
-    .tool-btn:active { transform:scale(.94); }
+    /* ===== 홈 하단 버튼 줄 · 모달(이름·도움말·의견·백업) ===== */
+    .home-foot { display:flex; flex-wrap:wrap; gap:8px; justify-content:center;
+      padding:6px 16px calc(14px + env(safe-area-inset-bottom)); }
+    .foot-btn { font-family:inherit; font-size:14px; padding:9px 14px; border-radius:999px; cursor:pointer;
+      border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.07); color:#cdd3f5; }
+    .foot-btn:active { transform:scale(.95); }
+    .foot-btn.set { border-color:rgba(255,233,179,.5); background:rgba(255,233,179,.12); color:#ffe9b3; }
+    .field-label { display:block; font-size:14px; color:#aab2e0; margin:10px 0 6px; }
+    .text-input, .text-area { width:100%; font-family:inherit; font-size:16px; color:#e7e2f5; border-radius:12px;
+      border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.06); padding:12px 14px; }
+    .text-area { min-height:110px; resize:vertical; }
+    .text-input:focus, .text-area:focus { outline:none; border-color:#ffe9b3; }
     .modal { position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; padding:18px;
       background:rgba(4,6,20,.62); backdrop-filter:blur(2px); }
     .modal[hidden] { display:none; }
@@ -149,12 +156,17 @@
 
   <!-- 홈: 이야기 고르기 -->
   <section class="home" id="home">
-    <div class="home-tools"><button class="tool-btn" id="btnBackup">🛟 백업·복원</button></div>
     <div class="home-head">
       <div class="home-title">별밤책</div>
       <div class="home-sub">오늘은 어떤 이야기를 들려줄까요?</div>
     </div>
     <ul class="story-list" id="storyList"></ul>
+    <div class="home-foot">
+      <button class="foot-btn" id="btnName">✏️ 아기 이름</button>
+      <button class="foot-btn" id="btnBackup">🛟 백업</button>
+      <button class="foot-btn" id="btnHelp">❔ 도움말</button>
+      <button class="foot-btn" id="btnFeedback">💬 의견</button>
+    </div>
   </section>
 
   <!-- 녹음+확인 화면 -->
@@ -280,7 +292,13 @@
 
     function babyName(){ try{ return (localStorage.getItem("babyName")||"").trim(); }catch(e){ return ""; } }
     function josa(n){ if(!n) return "야"; const c=n.charCodeAt(n.length-1); if(c>=0xAC00&&c<=0xD7A3) return ((c-0xAC00)%28===0)?"야":"아"; return "야"; }
-    function renderName(t){ const n=babyName(), shown=n||"아기 이름"; return t.replace(/\{이름아\}/g,'<span class="nm">('+shown+')'+josa(n)+'</span>'); }
+    function renderName(t){ const n=babyName(), shown=n||"아기 이름"; return t.replace(/\{이름아\}/g,'<span class="nm">('+escapeHtml(shown)+')'+josa(n)+'</span>'); }
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+    function updateNameLabel(){ const el=$("btnName"); if(!el) return; const n=babyName();
+      if(n){ el.textContent="✏️ "+n; el.classList.add("set"); } else { el.textContent="✏️ 아기 이름"; el.classList.remove("set"); } }
+    function refreshName(){ // 이름 바뀌면 보이는 화면의 {이름아} 갱신
+      if(recViewEl.style.display!=="none") paintScene(false);
+      if(playViewEl.style.display!=="none") paintPlayScene(false); }
 
     // ===== 저장(IndexedDB) =====
     let dbp=null;
@@ -499,6 +517,72 @@
       $("doClose").onclick=closeModal;
       buildBackup(); // 열자마자 파일 준비 → '보내기' 누르는 즉시 공유창(아이폰 gesture 대응)
     }
+
+    // ===== 아기 이름 =====
+    function openName(){
+      const n=babyName();
+      openModal(
+        `<h2>아기 이름 정하기 👶</h2>`+
+        `<p>이름을 넣으면 대본 속 <b>(아기 이름)</b> 자리가 우리 아기 이름으로 바뀌어요.</p>`+
+        `<label class="field-label" for="nameInput">아기 이름</label>`+
+        `<input class="text-input" id="nameInput" type="text" maxlength="12" placeholder="예: 지우" value="${escapeHtml(n)}">`+
+        `<button class="modal-btn gold" id="nameSave" style="margin-top:10px">저장</button>`+
+        (n?`<button class="modal-btn ghost" id="nameClear" style="margin-top:8px">이름 지우기</button>`:``)+
+        `<p class="modal-hint">※ 이름을 바꾼 뒤엔, 이미 한 녹음은 예전 이름으로 들려요. 새 이름으로 다시 녹음하는 걸 권해요.</p>`+
+        `<button class="modal-btn ghost" id="nameClose" style="margin-top:8px">닫기</button>`
+      );
+      const inp=$("nameInput"); try{ inp.focus(); }catch(e){}
+      $("nameSave").onclick=()=>{ const v=inp.value.trim();
+        try{ if(v) localStorage.setItem("babyName",v); else localStorage.removeItem("babyName"); }catch(e){}
+        updateNameLabel(); refreshName(); toast(v?`"${v}" 이름을 넣었어요 💛`:"이름을 비웠어요"); closeModal(); };
+      if(n) $("nameClear").onclick=()=>{ try{ localStorage.removeItem("babyName"); }catch(e){}
+        updateNameLabel(); refreshName(); toast("이름을 지웠어요"); closeModal(); };
+      $("nameClose").onclick=closeModal;
+    }
+
+    // ===== 도움말 =====
+    function openHelp(){
+      openModal(
+        `<h2>어떻게 쓰나요? 🌙</h2>`+
+        `<p>엄마·아빠 목소리로 우리 아기에게 그림책을 읽어주는 앱이에요. 녹음은 <b>이 폰 안에만</b> 저장돼요.</p>`+
+        `<div class="modal-h3">1. 녹음하기</div>`+
+        `<p class="modal-hint">홈에서 아직 녹음 안 한 이야기를 누르면 녹음 화면이 나와요. 장면마다 🔴 눌러 읽고, 다 읽으면 멈춤. 🔊로 확인해요.</p>`+
+        `<div class="modal-h3">2. 들려주기</div>`+
+        `<p class="modal-hint">다 녹음한 이야기를 누르면 아기에게 자동으로 넘어가며 들려줘요. 화면을 누르면 잠깐 멈춰요. (다시 녹음은 목록의 🎙 버튼)</p>`+
+        `<div class="modal-h3">3. 이름 넣기</div>`+
+        `<p class="modal-hint">✏️ 아기 이름을 넣으면 대본 속 (아기 이름) 자리에 쏙 들어가요.</p>`+
+        `<div class="modal-h3">4. 백업은 꼭!</div>`+
+        `<p class="modal-hint">녹음은 이 폰에만 있어요. <b>🛟 백업</b>으로 파일을 만들어 카톡 '나에게'에 보관하면 안전하고, 엄마·아빠 목소리를 <b>합칠</b> 수도 있어요.</p>`+
+        `<button class="modal-btn ghost" id="helpClose" style="margin-top:14px">닫기</button>`
+      );
+      $("helpClose").onclick=closeModal;
+    }
+
+    // ===== 의견 보내기 (기존 앱과 동일 — Netlify Forms) =====
+    function openFeedback(){
+      openModal(
+        `<h2>의견 보내기 💛</h2>`+
+        `<p>불편한 점, 바라는 점, 응원 모두 좋아요. 만든 사람에게 전해져요.</p>`+
+        `<label class="field-label" for="fbMsg">내용</label>`+
+        `<textarea class="text-area" id="fbMsg" placeholder="자유롭게 적어주세요"></textarea>`+
+        `<label class="field-label" for="fbEmail">답장 받을 이메일 (선택)</label>`+
+        `<input class="text-input" id="fbEmail" type="email" placeholder="선택 사항이에요">`+
+        `<button class="modal-btn gold" id="fbSend" style="margin-top:10px">보내기</button>`+
+        `<button class="modal-btn ghost" id="fbClose" style="margin-top:8px">닫기</button>`
+      );
+      $("fbClose").onclick=closeModal;
+      $("fbSend").onclick=async ()=>{
+        const msg=$("fbMsg").value.trim(), email=$("fbEmail").value.trim();
+        if(!msg){ toast("내용을 적어주세요"); return; }
+        const btn=$("fbSend"); btn.disabled=true; btn.textContent="보내는 중…";
+        try{
+          await fetch("/",{ method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"},
+            body:new URLSearchParams({"form-name":"feedback",message:msg,email:email,"bot-field":""}).toString() });
+          toast("보내주셔서 고마워요 💛"); closeModal();
+        }catch(e){ toast("전송에 실패했어요. 잠시 후 다시 시도해 주세요"); btn.disabled=false; btn.textContent="보내기"; }
+      };
+    }
+
     modalEl.onclick=(e)=>{ if(e.target===modalEl) closeModal(); };
     restoreInput.onchange=(e)=>{ restoreFromFile(e.target.files[0]); e.target.value=""; };
 
@@ -588,8 +672,12 @@
     document.querySelectorAll(".vtab").forEach(t=>t.onclick=()=>setVoice(t.dataset.voice));
     $("btnHome").onclick=showHome;
     $("btnBackup").onclick=openBackup;
+    $("btnName").onclick=openName;
+    $("btnHelp").onclick=openHelp;
+    $("btnFeedback").onclick=openFeedback;
 
     // 시작: 홈부터
+    updateNameLabel();
     showHome();
   })();
   </script>
