@@ -24,6 +24,13 @@
 
     /* 상단: 목소리 + 진행표시 (아주 담백하게) */
     .top { padding:calc(12px + env(safe-area-inset-top)) 16px 4px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+    .swline { display:flex; align-items:center; gap:12px; }
+    .sw { font-family:inherit; font-size:22px; width:38px; height:38px; border-radius:50%; cursor:pointer;
+      border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.06); color:#cdd3f5; }
+    .sw:active { transform:scale(.92); }
+    .swtitle { font-family:"Dongle","Jua",sans-serif; font-weight:700; font-size:32px; line-height:.9; min-width:130px; text-align:center;
+      background:linear-gradient(180deg,#ffe9b3,#ffd79a 60%,#f4b46a); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .swhint { font-size:11px; color:#6b73a0; margin-top:-2px; }
     .voices { display:flex; gap:8px; }
     .vtab { font-family:inherit; font-size:16px; padding:6px 16px; border-radius:999px; cursor:pointer;
       border:1px solid rgba(255,255,255,.22); background:rgba(255,255,255,.08); color:#cdd3f5; }
@@ -86,6 +93,12 @@
   <div class="sky" id="sky" aria-hidden="true"></div>
   <div class="app">
     <div class="top">
+      <div class="swline">
+        <button class="sw" id="sPrev" aria-label="이전 이야기">‹</button>
+        <span class="swtitle" id="swTitle">이야기</span>
+        <button class="sw" id="sNext" aria-label="다음 이야기">›</button>
+      </div>
+      <div class="swhint">← 이야기 바꾸기 (임시) →</div>
       <div class="voices">
         <button class="vtab on" data-voice="mom">🌷 엄마</button>
         <button class="vtab" data-voice="dad">🌰 아빠</button>
@@ -112,18 +125,60 @@
   <script>
   (() => {
     "use strict";
-    // ===== 대본: 내용 그대로, 2~3문장씩 한 장면으로 묶음 =====
-    const STORY = {
-      id:"bear-stars", title:"별을 세는 아기 곰",
-      scenes:[
+    // ===== 대본: 내용 그대로, 2~3문장씩 한 장면으로 묶음 (이모지만 추가) =====
+    const STORIES = [
+      { id:"three-pigs", title:"아기 돼지 삼 형제", scenes:[
+        { emoji:"🐷", lines:["옛날 옛날에 아기 돼지 삼 형제가 살았어요.","어느덧 자라서, 각자 집을 짓기로 했지요."] },
+        { emoji:"🏠", lines:["첫째 돼지는 지푸라기로 후다닥 집을 지었어요.","둘째 돼지는 나무로 뚝딱뚝딱 집을 지었어요.","셋째 돼지는 벽돌로 차곡차곡, 오래오래 집을 지었어요."] },
+        { emoji:"🐺", lines:["그때 배고픈 늑대가 어슬렁어슬렁 나타났어요.","\"후~ 불면 다 날아가라!\""] },
+        { emoji:"💨", lines:["늑대가 후! 불자 지푸라기 집이 폭삭 무너졌어요.","첫째 돼지는 깜짝 놀라 둘째네 집으로 도망쳤어요."] },
+        { emoji:"🌬️", lines:["늑대가 후우! 불자 나무 집도 와르르 무너졌지요.","둘은 함께 셋째네 벽돌 집으로 달려갔어요."] },
+        { emoji:"🧱", lines:["늑대가 후우우! 아무리 불어도 벽돌 집은 끄떡없었어요.","늑대는 씩씩대다가 그만 멀리 도망가 버렸어요."] },
+        { emoji:"💗", lines:["아기 돼지 삼 형제는 튼튼한 집에서","오래오래 사이좋게 살았답니다."] },
+        { emoji:"🌙", lines:["{이름아}, 우리도 포근한 집에서 폭 자자."] },
+      ]},
+      { id:"red-hood", title:"빨간 모자", scenes:[
+        { emoji:"🧺", lines:["빨간 모자를 쓴 예쁜 아이가 있었어요.","어느 날 엄마가 바구니를 건네며 말했어요."] },
+        { emoji:"🥣", lines:["\"할머니가 편찮으시대. 이 따뜻한 죽 좀 갖다 드리렴.\"","\"네, 엄마! 얼른 다녀올게요.\""] },
+        { emoji:"🌳", lines:["빨간 모자는 숲길을 콧노래 부르며 걸었어요.","새들이 지저귀고, 햇살이 반짝였지요."] },
+        { emoji:"🐺", lines:["그때 커다란 늑대가 슬그머니 다가왔어요.","\"안녕, 빨간 모자야. 어디 가니?\"","\"할머니 댁에 가요. 저 언덕 너머 작은 집이요.\""] },
+        { emoji:"🌸", lines:["늑대는 침을 꼴깍 삼키며 꾀를 냈어요.","\"그래? 그럼 예쁜 꽃도 좀 꺾어 가렴.\""] },
+        { emoji:"🏃", lines:["빨간 모자가 꽃을 꺾는 사이,","늑대는 지름길로 할머니 집에 먼저 도착했어요.","그러고는 할머니인 척 이불 속에 쏙 누웠지요."] },
+        { emoji:"🚪", lines:["잠시 뒤, 빨간 모자가 문을 똑똑 두드렸어요.","\"할머니, 눈이 왜 이렇게 커요?\"","\"너를 더 잘 보려고 그런단다.\""] },
+        { emoji:"👂", lines:["\"할머니, 귀는 왜 이렇게 커요?\"","\"네 목소리를 더 잘 들으려고 그렇지.\"","\"할머니, 입은 왜 이렇게 커요?\""] },
+        { emoji:"🪓", lines:["바로 그때, 밖에서 나무를 하던 사냥꾼이 이상한 소리를 들었어요.","사냥꾼이 문을 벌컥 열자, 늑대는 깜짝 놀라 후다닥 도망쳤어요.","옷장에 숨어 있던 진짜 할머니도 무사히 나왔지요."] },
+        { emoji:"🤗", lines:["빨간 모자와 할머니는 서로를 꼭 껴안았어요.","\"무서웠지? 이제 다 괜찮아.\"","셋은 따뜻한 죽을 나눠 먹으며 도란도란 이야기했답니다."] },
+        { emoji:"🌙", lines:["{이름아}, 오늘도 폭 안아줄게. 잘 자렴."] },
+      ]},
+      { id:"ugly-duckling", title:"미운 아기 오리", scenes:[
+        { emoji:"🥚", lines:["엄마 오리가 둥지에서 알을 품고 있었어요.","하나둘 톡, 톡 — 아기 오리들이 깨어났어요.","\"삐약삐약!\" 노란 아기들이 줄줄이 나왔지요."] },
+        { emoji:"🐣", lines:["그런데 마지막 알은 유난히 컸어요.","한참 뒤 톡 깨어난 아기는, 크고 회색빛이었어요."] },
+        { emoji:"😕", lines:["다른 오리들이 수군거렸어요.","\"쟤는 왜 저렇게 생겼어? 우리랑 다르잖아.\""] },
+        { emoji:"😢", lines:["아기 오리는 어디를 가도 놀림을 받았어요.","닭도, 고양이도 쌀쌀맞게 굴었지요.","슬픈 아기 오리는 그만 집을 떠났어요."] },
+        { emoji:"❄️", lines:["혼자가 된 아기 오리에게 추운 겨울이 왔어요.","찬바람이 불고, 연못은 꽁꽁 얼었어요.","그래도 아기 오리는 울지 않고 씩씩하게 견뎠어요."] },
+        { emoji:"🌷", lines:["긴 겨울이 지나고, 드디어 따뜻한 봄이 왔지요.","얼음 녹은 연못 위로 하얀 새들이 우아하게 헤엄쳤어요.","\"와, 정말 아름다운 백조들이야!\""] },
+        { emoji:"💧", lines:["아기 오리가 물에 살며시 얼굴을 비춰 보았어요.","그런데 이게 웬일이에요?"] },
+        { emoji:"🦢", lines:["물속엔 크고 새하얀, 아름다운 백조가 있었어요.","미운 아기 오리가 아니라, 멋진 백조가 되어 있었던 거예요!"] },
+        { emoji:"✨", lines:["\"너였구나! 이렇게 예쁜 백조였어!\"","아기 오리는 그제야 환하게 웃었답니다."] },
+        { emoji:"🌙", lines:["{이름아}, 너도 아기 오리처럼 무럭무럭 예쁘게 자랄 거야."] },
+      ]},
+      { id:"bear-stars", title:"별을 세는 아기 곰", scenes:[
         { emoji:"🐻", lines:["잠이 오지 않는 아기 곰이 있었어요.","엄마 곰이 다정하게 말했어요.","\"우리, 별을 세어 볼까?\""] },
         { emoji:"🌌", lines:["둘은 창밖 깜깜한 밤하늘을 올려다봤어요.","\"하나, 반짝. 둘, 반짝. 셋, 반짝.\""] },
         { emoji:"😌", lines:["별을 셀수록 아기 곰의 눈이 스르르 감겼어요.","\"저 별은 우리 아기를 지켜 준단다.\"","\"저 별은 좋은 꿈을 가져다준대.\""] },
         { emoji:"🍃", lines:["바람이 살랑 불어와 이불을 덮어 주었어요.","아기 곰은 어느새 새근새근 잠이 들었어요."] },
         { emoji:"🌙", lines:["{이름아}, 우리도 별을 세며 잘 자자.","하나… 둘… 셋… 쉬…"] },
-      ],
-    };
-    const N = STORY.scenes.length;
+      ]},
+      { id:"moon-dream", title:"달님이 데려다준 꿈나라", scenes:[
+        { emoji:"🌙", lines:["깜깜한 밤, 둥근 달님이 방긋 웃었어요.","\"우리 아기, 이제 잘 시간이야.\""] },
+        { emoji:"🌟", lines:["달님은 부드러운 달빛으로 이불을 만들어 주었어요.","별들이 하나둘 이불 위에 살포시 내려앉았지요."] },
+        { emoji:"☁️", lines:["\"좋은 꿈나라로 함께 갈까?\"","아기는 폭신한 구름 배에 올라탔어요.","구름 배는 두둥실, 두둥실 떠올랐어요."] },
+        { emoji:"🏘️", lines:["아래에는 잠든 마을이 조용히 빛나고 있었어요.","토끼도, 강아지도, 아기 새도 모두 코 자고 있었지요."] },
+        { emoji:"😴", lines:["\"잘 자, 잘 자.\" 달님이 나직이 속삭였어요.","아기는 달님 품에서 스르르 잠이 들었어요."] },
+        { emoji:"💤", lines:["{이름아}, 좋은 꿈 꾸렴."] },
+      ]},
+    ];
+    let storyIdx=0, story=STORIES[storyIdx], N=story.scenes.length;
     const VLABEL = { mom:"엄마", dad:"아빠" };
 
     let voice="mom", cur=0, forceRecord=false;
@@ -151,11 +206,11 @@
     function db(){ if(dbp) return dbp; dbp=new Promise((res,rej)=>{ const r=indexedDB.open("voicebook-demo",1);
       r.onupgradeneeded=()=>r.result.createObjectStore("clips",{keyPath:"key"}); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); return dbp; }
     const STORE_VER="v2"; // 이전 시범(12장면) 데이터와 섞이지 않게 버전 분리
-    const key=(v,i)=>`${STORY.id}:${STORE_VER}:${v}:${i}`;
+    const key=(v,i)=>`${story.id}:${STORE_VER}:${v}:${i}`;
     async function getClip(v,i){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips").objectStore("clips").get(key(v,i)); t.onsuccess=()=>res(t.result||null); t.onerror=()=>rej(t.error); }); }
     async function putClip(v,i,blob,mime){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips","readwrite").objectStore("clips").put({key:key(v,i),blob,mime}); t.onsuccess=()=>res(); t.onerror=()=>rej(t.error); }); }
     async function loadRecorded(v){ const d=await db(); return new Promise((res,rej)=>{ const t=d.transaction("clips").objectStore("clips").getAllKeys();
-      t.onsuccess=()=>{ const pre=`${STORY.id}:${STORE_VER}:${v}:`; res(new Set((t.result||[]).filter(k=>k.indexOf(pre)===0).map(k=>+k.slice(pre.length)).filter(i=>i>=0&&i<N))); }; t.onerror=()=>rej(t.error); }); }
+      t.onsuccess=()=>{ const pre=`${story.id}:${STORE_VER}:${v}:`; res(new Set((t.result||[]).filter(k=>k.indexOf(pre)===0).map(k=>+k.slice(pre.length)).filter(i=>i>=0&&i<N))); }; t.onerror=()=>rej(t.error); }); }
 
     function pickMime(){ const c=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/aac","audio/ogg;codecs=opus"];
       if(window.MediaRecorder&&MediaRecorder.isTypeSupported){ for(const t of c) if(MediaRecorder.isTypeSupported(t)) return t; } return ""; }
@@ -164,7 +219,7 @@
     function doneCount(){ let c=0; for(let i=0;i<N;i++) if(recorded.has(i)) c++; return c; }
     const isPlayMode = () => allDone() && !forceRecord;
 
-    function paintScene(anim){ const sc=STORY.scenes[cur];
+    function paintScene(anim){ const sc=story.scenes[cur];
       artEl.textContent=sc.emoji;
       textEl.innerHTML = sc.lines.map(l=>`<span class="ln">${renderName(l)}</span>`).join("");
       if(anim){ [artEl,textEl].forEach(el=>{ el.classList.remove("scene-in"); void el.offsetWidth; el.classList.add("scene-in"); }); }
@@ -211,6 +266,11 @@
     async function setVoice(v){ if(v===voice||recording) return; stopAllAudio(); voice=v; cur=0; forceRecord=false;
       document.querySelectorAll(".vtab").forEach(t=>t.classList.toggle("on",t.dataset.voice===v));
       recorded=await loadRecorded(voice); render(true); }
+
+    function updateSwitchTitle(){ const t=$("swTitle"); if(t) t.textContent=story.title; }
+    async function switchStory(delta){ if(recording) return; stopAllAudio();
+      storyIdx=(storyIdx+delta+STORIES.length)%STORIES.length; story=STORIES[storyIdx]; N=story.scenes.length;
+      cur=0; forceRecord=false; updateSwitchTitle(); recorded=await loadRecorded(voice); render(true); }
 
     // ===== 녹음 =====
     async function startRec(){
@@ -276,8 +336,10 @@
     document.addEventListener("keydown",(e)=>{ if(recording) return; if(e.key==="ArrowLeft") go(cur-1); else if(e.key==="ArrowRight") go(cur+1);
       else if(e.code==="Space"){ e.preventDefault(); if(isPlayMode()&&playing) togglePause(); } });
     document.querySelectorAll(".vtab").forEach(t=>t.onclick=()=>setVoice(t.dataset.voice));
+    $("sPrev").onclick=()=>switchStory(-1);
+    $("sNext").onclick=()=>switchStory(1);
 
-    (async()=>{ recorded=await loadRecorded(voice); render(true); })();
+    (async()=>{ updateSwitchTitle(); recorded=await loadRecorded(voice); render(true); })();
   })();
   </script>
 </body>
