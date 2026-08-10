@@ -133,13 +133,29 @@
 
   /* ================= 아기 이름 ================= */
   function getBabyName() { try { return (localStorage.getItem("babyName") || "").trim(); } catch (e) { return ""; } }
-  function hasBatchim(name) { const c = name.charCodeAt(name.length - 1); return c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 !== 0; }
-  function josaAh(name) { if (!name) return "야"; return hasBatchim(name) ? "아" : "야"; }   // "지우야" / "민준아"
-  function josaUi(name) { return name + (hasBatchim(name) ? "이의" : "의"); }                // "민준이의" / "지우의"
-  // "{이름아}" → "(지우)야"
+  function hasBatchim(s) { const c = s.charCodeAt(s.length - 1); return c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 !== 0; }
+  function josaUi(name) { return name + (hasBatchim(name) ? "이의" : "의"); }   // "민준이의" / "지우의"
+
+  /* 대본 속 이름 자리 채우기
+   *   {이름}   → (하준이) / (지우)      말할 때 쓰는 형태 ("하준이 손이 근질근질")
+   *   {이름은} → (하준이)는 / (지우)는
+   *   {이름이} → (하준이)가 / (지우)가
+   *   {이름을} → (하준이)를 / (지우)를
+   *   {이름아} → (하준)아 / (지우)야   부를 때 (이때만 '이'를 안 붙인다)
+   * 받침 있는 이름엔 '이'를 붙이므로(하준 → 하준이) 조사는 늘 는/가/를이 된다.
+   * 이름을 아직 안 넣었으면 "(아기 이름)은" 처럼 자리만 보여준다. */
+  const NAME_JOSA = { "은": ["은", "는"], "이": ["이", "가"], "을": ["을", "를"] };
   function renderName(text) {
     const name = getBabyName();
-    return text.replace(/\{이름아\}/g, '<span class="nm">(' + escapeHtml(name || "아기 이름") + ')' + josaAh(name) + "</span>");
+    const shown = name || "아기 이름";
+    const stem = name && hasBatchim(name) ? name + "이" : shown;
+    const tag = (word, josa) => '<span class="nm">(' + escapeHtml(word) + ')' + josa + "</span>";
+    return text.replace(/\{이름([아은이을]?)\}/g, (m, kind) => {
+      if (kind === "아") return tag(shown, hasBatchim(shown) ? "아" : "야");
+      if (!kind) return tag(stem, "");
+      const pair = NAME_JOSA[kind];
+      return tag(stem, hasBatchim(stem) ? pair[0] : pair[1]);
+    });
   }
   // 이름이 있으면 제목 위에 "○○이의"(눌러서 수정), 없으면 아래 "아기 이름 정하기" 알약
   function updateNameUI() {
