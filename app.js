@@ -27,7 +27,11 @@
    *   message : 내용 칸의 entry 번호  (예: "entry.1234567890")
    *   email   : 이메일 칸의 entry 번호
    * 비워 두면 예전 방식(Netlify Forms)으로 보낸다. */
-  const FEEDBACK_FORM = { id: "", message: "", email: "" };
+  const FEEDBACK_FORM = {
+    id: "1FAIpQLSe4knTjkDXzTtPgLFAeuDw-q7VwJSx-LaWzlUd08exci1d9Fg",
+    message: "entry.532879545",
+    email: "entry.1819893667",
+  };
 
   const $ = (id) => document.getElementById(id);
   const STORIES = window.SCRIPTS;
