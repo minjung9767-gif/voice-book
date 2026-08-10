@@ -2,7 +2,7 @@
  * 별밤책 — 앱 로직
  * - 녹음(MediaRecorder) → 이 기기 IndexedDB에 저장 → 재생
  * - 목소리는 엄마/아빠, 이야기별로 따로 저장 (열쇠: `${scriptId}:${voice}`)
- * - 아기 이름 넣기, 전체 백업/복원, 도움말, 의견 보내기
+ * - 아기 이름 넣기 / 더보기(백업·복원 + 도움말 + 의견) 한 창에 모음
  * 데이터는 기기 밖으로 나가지 않는다(서버 없음).
  * ========================================================= */
 (() => {
@@ -10,7 +10,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
   const MAX_SECONDS = 300;
-  const APP_VERSION = "v21";
+  const APP_VERSION = "v22";
 
   const state = {
     scriptId: null, voice: "mom", mode: "idle",
@@ -26,7 +26,7 @@
   const restoreInput = $("restoreInput"), toastEl = $("toast");
   const moodEmoji = $("moodEmoji"), moodTitle = $("moodTitle");
   const playPauseBtn = $("playPause"), shuffleBtn = $("shuffleToggle");
-  const nameChip = $("nameChip");
+  const nameChip = $("nameChip"), nameOwner = $("nameOwner"), footNote = $("footNote");
   const modalEl = $("modal"), modalBody = $("modalBody");
 
   const scriptById = (id) => window.SCRIPTS.find((s) => s.id === id);
@@ -84,16 +84,42 @@
     const josa = josaAh(name);
     return text.replace(/\{이름아\}/g, '<span class="namebox">(' + escapeHtml(shown) + ')' + josa + '</span>');
   }
-  function updateNameChip() {
+  // "민준" → "민준이의" / "지우" → "지우의"
+  function josaUi(name) {
+    const code = name.charCodeAt(name.length - 1);
+    const hasBatchim = code >= 0xAC00 && code <= 0xD7A3 && (code - 0xAC00) % 28 !== 0;
+    return name + (hasBatchim ? "이의" : "의");
+  }
+  // 이름이 있으면 제목 위에 "○○이의"(눌러서 수정), 없으면 아래 "아기 이름 정하기" 알약
+  function updateNameUI() {
     const name = getBabyName();
-    if (name) { nameChip.textContent = "👶 " + name; nameChip.classList.add("set"); }
-    else { nameChip.textContent = "👶 아기 이름 정하기"; nameChip.classList.remove("set"); }
+    if (name) {
+      nameOwner.textContent = josaUi(name) + " ✏️";
+      nameOwner.hidden = false; nameChip.hidden = true;
+    } else {
+      nameOwner.hidden = true; nameChip.hidden = false;
+    }
+  }
+
+  /* ================= 홈 하단 안내 한 줄 ================= */
+  function hasBackedUp() { try { return !!localStorage.getItem("lastBackupAt"); } catch (e) { return false; } }
+  function markBackedUp() { try { localStorage.setItem("lastBackupAt", String(Date.now())); } catch (e) {} updateFootNote(); }
+  function updateFootNote() {
+    if (!footNote) return;
+    if (state.saved.size && !hasBackedUp()) {
+      footNote.className = "privacy-note warn";
+      footNote.innerHTML = "🛟 아직 <b>백업</b> 전이에요 — 더보기에서 백업해 주세요";
+    } else {
+      footNote.className = "privacy-note";
+      footNote.innerHTML = "🔒 녹음은 <b>이 기기 안에만</b> 저장돼요";
+    }
   }
 
   /* ================= 홈 화면 ================= */
   async function renderHome() {
     state.saved = new Set(await dbAllKeys());
-    updateNameChip();
+    updateNameUI();
+    updateFootNote();
     listEl.innerHTML = "";
     for (const s of window.SCRIPTS) {
       const hasMom = state.saved.has(`${s.id}:mom`), hasDad = state.saved.has(`${s.id}:dad`);
@@ -338,6 +364,7 @@
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: "별밤책 백업", text: "별밤책 녹음 백업 파일이에요. 카톡 '나에게'에 보관하면 폰을 바꿔도 안전해요." });
+        markBackedUp();
         toast(count + "개 백업을 보냈어요 🛟  (카톡 ‘나에게’ 추천)"); track("backup"); return;
       }
     } catch (e) {
@@ -345,6 +372,7 @@
     }
     // 공유가 안 되는 환경(일부 설치본 등): 파일로 저장 시도 + 안내
     downloadBlob(blob, "별밤책-백업.txt");
+    markBackedUp();
     toast("공유창이 안 떠서 파일로 저장했어요. 안 되면 사파리·크롬으로 열어 다시 해주세요");
   }
   async function restoreFromFile(file) {
@@ -365,40 +393,9 @@
     } catch (e) { toast("복원에 실패했어요 (파일을 확인해 주세요)"); }
   }
 
-  /* ================= 모달 (도움말·이름·백업·의견) ================= */
+  /* ================= 모달 (이름 · 더보기) ================= */
   function openModal(html) { modalBody.innerHTML = html; modalEl.hidden = false; }
   function closeModal() { modalEl.hidden = true; modalBody.innerHTML = ""; }
-
-  function openHelp() {
-    openModal(`
-      <div class="modal-body">
-        <h2>도움말 🌙</h2>
-        <h3>📲 홈 화면에 추가하기 (앱처럼 쓰기)</h3>
-        <ul>
-          <li><b>아이폰</b>: 꼭 <b>사파리(Safari)</b>에서 → 아래 <b>공유(⬆️)</b> → <b>"홈 화면에 추가"</b></li>
-          <li><b>안드로이드</b>: <b>크롬</b>에서 → <b>⋮ 메뉴</b> → <b>"홈 화면에 추가"</b></li>
-        </ul>
-        <p><b>카카오톡·인스타 등으로 링크를 열었다면</b>, 먼저 <b>사파리·크롬으로 열어주세요.</b><br/>
-        (화면 <b>오른쪽 메뉴(⋯)</b> → <b>"다른 브라우저로 열기 / Safari로 열기"</b>)</p>
-        <p class="hint">아이폰은 사파리에서만 "홈 화면에 추가"가 돼요. 그리고 녹음은 <b>연 브라우저마다 따로 저장</b>되니, 처음부터 사파리·크롬으로 여는 게 안전해요.</p>
-        <h3>🎙️ 이렇게 써요</h3>
-        <ul>
-          <li>이야기 고르기 → 엄마/아빠 고르기 → <b>녹음하기</b></li>
-          <li>대본 속 <b>(아기 이름)</b> 자리엔 우리 아기 이름을 넣어 읽어요</li>
-          <li><b>저장</b> 후 <b>들려주기</b> 를 누르면 밤 화면과 함께 목소리가 흘러요</li>
-        </ul>
-        <h3>💾 녹음 보관 (중요)</h3>
-        <p>녹음은 <b>이 기기 안에만</b> 저장돼요. 기기를 바꾸거나 브라우저 기록을 지우면 사라질 수 있어요.
-        소중한 녹음은 <b>"녹음 백업"</b>으로 파일을 저장해 두세요.</p>
-        <button class="modal-btn ghost" id="helpToBackup">🛟 녹음 백업 · 복원</button>
-        <h3>💛 의견 보내기</h3>
-        <p>쓰다가 불편한 점이나 바라는 게 있으면 알려주세요. 큰 힘이 돼요.</p>
-        <button class="modal-btn" id="helpToFeedback">의견 보내기</button>
-        <p class="hint" style="margin-top:18px; text-align:center;">별밤책 ${APP_VERSION}</p>
-      </div>`);
-    $("helpToBackup").addEventListener("click", openBackup);
-    $("helpToFeedback").addEventListener("click", openFeedback);
-  }
 
   function openName() {
     const name = getBabyName();
@@ -417,26 +414,29 @@
     $("nameSave").addEventListener("click", () => {
       const v = input.value.trim();
       try { localStorage.setItem("babyName", v); } catch (e) {}
-      updateNameChip();
+      updateNameUI();
       if (storyEl.classList.contains("active")) renderScriptBody();
       toast(v ? `"${v}" 이름을 넣었어요 💛` : "이름을 비웠어요"); track("set_name"); closeModal();
     });
-    if (name) $("nameClear").addEventListener("click", () => { try { localStorage.removeItem("babyName"); } catch (e) {} updateNameChip(); if (storyEl.classList.contains("active")) renderScriptBody(); toast("이름을 지웠어요"); closeModal(); });
+    if (name) $("nameClear").addEventListener("click", () => { try { localStorage.removeItem("babyName"); } catch (e) {} updateNameUI(); if (storyEl.classList.contains("active")) renderScriptBody(); toast("이름을 지웠어요"); closeModal(); });
   }
 
-  function openBackup() {
+  /* ---------- 더보기: 백업 · 사용법 · 의견을 한 창에 (쭉 스크롤) ---------- */
+  function openMore() {
     openModal(`
       <div class="modal-body">
-        <h2>녹음 백업 · 복원 🛟</h2>
+        <h2>더보기 ⚙️</h2>
+
+        <h3 class="more-sec">🛟 녹음 백업 · 복원</h3>
         <p>녹음은 이 기기 안에만 있어요. <b>카카오톡 ‘나에게 보내기’</b>로 백업해 두면,
         폰을 바꾸거나 실수로 지워져도 카톡에서 다시 <b>복원</b>할 수 있어요.</p>
-
         <button class="modal-btn gold" id="doBackup">💬 카카오톡으로 백업 보내기</button>
         <p class="hint" id="backupHint">백업 파일을 준비하고 있어요…</p>
         <ol class="steps">
           <li>위 버튼을 누르면 <b>공유창</b>이 떠요</li>
           <li><b>카카오톡</b> 선택 → <b>나에게 보내기</b>(내 채팅방)에 저장</li>
         </ol>
+        <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>두 목소리가 한 폰에 합쳐져요.</b></p>
 
         <h3>📥 복원하기 (백업에서 되살리기)</h3>
         <ol class="steps">
@@ -444,12 +444,47 @@
           <li>아래 버튼을 누르고, 방금 저장한 <b>별밤책-백업.txt</b>를 고르기</li>
         </ol>
         <button class="modal-btn ghost" id="doRestore">📥 백업 파일에서 복원</button>
-
         <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 백업이 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.
         백업은 사진첩이 아니라 <b>파일</b>로 저장돼요.</p>
+
+        <hr class="more-hr" />
+
+        <h3 class="more-sec">❔ 사용법</h3>
+        <h3>🎙️ 이렇게 써요</h3>
+        <ul>
+          <li>이야기 고르기 → 엄마/아빠 고르기 → <b>녹음하기</b></li>
+          <li>대본 속 <b>(아기 이름)</b> 자리엔 우리 아기 이름을 넣어 읽어요</li>
+          <li><b>저장</b> 후 <b>들려주기</b> 를 누르면 밤 화면과 함께 목소리가 흘러요</li>
+        </ul>
+        <h3>👶 아기 이름 넣기</h3>
+        <p>홈 화면 <b>제목 위 이름</b>(또는 “아기 이름 정하기”)을 누르면 바꿀 수 있어요.
+        대본 속 <b>(아기 이름)</b> 자리에 쏙 들어가요.</p>
+        <h3>📲 홈 화면에 추가하기 (앱처럼 쓰기)</h3>
+        <ul>
+          <li><b>아이폰</b>: 꼭 <b>사파리(Safari)</b>에서 → 아래 <b>공유(⬆️)</b> → <b>"홈 화면에 추가"</b></li>
+          <li><b>안드로이드</b>: <b>크롬</b>에서 → <b>⋮ 메뉴</b> → <b>"홈 화면에 추가"</b></li>
+        </ul>
+        <p><b>카카오톡·인스타 등으로 링크를 열었다면</b>, 먼저 <b>사파리·크롬으로 열어주세요.</b><br/>
+        (화면 <b>오른쪽 메뉴(⋯)</b> → <b>"다른 브라우저로 열기 / Safari로 열기"</b>)</p>
+        <p class="hint">아이폰은 사파리에서만 "홈 화면에 추가"가 돼요. 그리고 녹음은 <b>연 브라우저마다 따로 저장</b>되니, 처음부터 사파리·크롬으로 여는 게 안전해요.</p>
+
+        <hr class="more-hr" />
+
+        <h3 class="more-sec">💬 의견 보내기</h3>
+        <p>불편한 점, 바라는 점, 응원 모두 좋아요. 만든 사람에게 전해져요.</p>
+        <label class="field-label" for="fbMsg">내용</label>
+        <textarea class="text-area" id="fbMsg" placeholder="자유롭게 적어주세요"></textarea>
+        <label class="field-label" for="fbEmail">답장 받을 이메일 (선택)</label>
+        <input class="text-input" id="fbEmail" type="email" placeholder="선택 사항이에요" />
+        <button class="modal-btn" id="fbSend">보내기</button>
+        <p class="hint">보낸 내용은 만든 사람에게만 전달돼요.</p>
+
+        <hr class="more-hr" />
+        <p class="hint" style="text-align:center;">🔒 녹음은 이 기기 안에만 저장돼요 · 서버에 올라가지 않아요<br/>별밤책 ${APP_VERSION}</p>
       </div>`);
     $("doBackup").addEventListener("click", sendBackup);
     $("doRestore").addEventListener("click", () => restoreInput.click());
+    $("fbSend").addEventListener("click", sendFeedback);
     buildBackup();   // 모달 열자마자 파일 준비 → 버튼 누르는 즉시 공유창이 뜨게
   }
 
@@ -478,28 +513,16 @@
     if (ok) ok.addEventListener("click", closeModal);
   }
 
-  function openFeedback() {
-    openModal(`
-      <div class="modal-body">
-        <h2>의견 보내기 💛</h2>
-        <p>불편한 점, 바라는 점, 응원 모두 좋아요.<br/>만든 사람에게 전해져요.</p>
-        <label class="field-label" for="fbMsg">내용</label>
-        <textarea class="text-area" id="fbMsg" placeholder="자유롭게 적어주세요"></textarea>
-        <label class="field-label" for="fbEmail">답장 받을 이메일 (선택)</label>
-        <input class="text-input" id="fbEmail" type="email" placeholder="선택 사항이에요" />
-        <button class="modal-btn" id="fbSend">보내기</button>
-        <p class="hint">보낸 내용은 만든 사람에게만 전달돼요.</p>
-      </div>`);
-    $("fbSend").addEventListener("click", async () => {
-      const msg = $("fbMsg").value.trim(); const email = $("fbEmail").value.trim();
-      if (!msg) { toast("내용을 적어주세요"); return; }
-      const btn = $("fbSend"); btn.disabled = true; btn.textContent = "보내는 중…";
-      try {
-        await fetch("/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ "form-name": "feedback", message: msg, email: email, "bot-field": "" }).toString() });
-        toast("보내주셔서 고마워요 💛"); track("feedback"); closeModal();
-      } catch (e) { toast("전송에 실패했어요. 잠시 후 다시 시도해 주세요"); btn.disabled = false; btn.textContent = "보내기"; }
-    });
+  // 의견 보내기 (더보기 모달 안 폼 → Netlify Forms)
+  async function sendFeedback() {
+    const msg = $("fbMsg").value.trim(); const email = $("fbEmail").value.trim();
+    if (!msg) { toast("내용을 적어주세요"); return; }
+    const btn = $("fbSend"); btn.disabled = true; btn.textContent = "보내는 중…";
+    try {
+      await fetch("/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ "form-name": "feedback", message: msg, email: email, "bot-field": "" }).toString() });
+      toast("보내주셔서 고마워요 💛"); track("feedback"); closeModal();
+    } catch (e) { toast("전송에 실패했어요. 잠시 후 다시 시도해 주세요"); btn.disabled = false; btn.textContent = "보내기"; }
   }
 
   /* ================= 정리 ================= */
@@ -511,9 +534,9 @@
 
   /* ================= 이벤트 ================= */
   $("backBtn").addEventListener("click", showHome);
-  $("helpBtn").addEventListener("click", openHelp);
   nameChip.addEventListener("click", openName);
-  $("backupBtn").addEventListener("click", openBackup);
+  nameOwner.addEventListener("click", openName);
+  $("moreBtn").addEventListener("click", openMore);
   $("modalClose").addEventListener("click", closeModal);
   modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
   document.querySelectorAll(".voice-tab").forEach((t) => t.addEventListener("click", () => selectVoice(t.dataset.voice)));

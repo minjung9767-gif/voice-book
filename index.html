@@ -29,7 +29,8 @@
   <!-- ===== 홈 화면 ===== -->
   <section id="home" class="screen active">
     <header class="home-head">
-      <button id="helpBtn" class="corner-btn" aria-label="도움말">?</button>
+      <!-- 아기 이름: 넣으면 제목 위에 "○○이의", 없으면 아래 알약 버튼 -->
+      <button id="nameOwner" class="name-owner" type="button" hidden></button>
       <h1 class="app-title">별밤책</h1>
       <p class="app-sub">엄마·아빠 목소리로, 포근한 밤.</p>
       <button id="nameChip" class="name-chip" type="button">👶 아기 이름 정하기</button>
@@ -38,11 +39,8 @@
     <ul id="scriptList" class="script-list" aria-label="이야기 목록"></ul>
 
     <footer class="home-foot">
-      <button id="backupBtn" class="foot-link" type="button">🛟 녹음 백업 · 복원</button>
-      <p class="privacy-note">
-        <span class="pn-line1">🔒 녹음은 <b>이 기기 안에만</b> 저장돼요.</span>
-        <span class="pn-line2">소중한 녹음은 꼭 <b>백업</b>해 두세요.</span>
-      </p>
+      <button id="moreBtn" class="foot-link" type="button">⚙️ 더보기</button>
+      <p class="privacy-note" id="footNote"></p>
     </footer>
   </section>
 
@@ -86,7 +84,7 @@
     </div>
   </section>
 
-  <!-- ===== 공용 모달(도움말·이름·백업·의견) ===== -->
+  <!-- ===== 공용 모달(이름 · 더보기[백업·도움말·의견]) ===== -->
   <div id="modal" class="modal" hidden>
     <div class="modal-card" role="dialog" aria-modal="true">
       <button id="modalClose" class="modal-close" aria-label="닫기">✕</button>
