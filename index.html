@@ -16,7 +16,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Dongle:wght@700&family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -26,17 +26,17 @@
     <div class="moon"></div>
   </div>
 
-  <!-- ===== 홈 화면 ===== -->
+  <!-- ===== 홈 화면: 이야기 고르기 ===== -->
   <section id="home" class="screen active">
     <header class="home-head">
       <!-- 아기 이름: 넣으면 제목 위에 "○○이의", 없으면 아래 알약 버튼 -->
       <button id="nameOwner" class="name-owner" type="button" hidden></button>
       <h1 class="app-title">별밤책</h1>
-      <p class="app-sub">엄마·아빠 목소리로, 포근한 밤.</p>
+      <p class="app-sub">오늘은 어떤 이야기를 들려줄까요?</p>
       <button id="nameChip" class="name-chip" type="button">👶 아기 이름 정하기</button>
     </header>
 
-    <ul id="scriptList" class="script-list" aria-label="이야기 목록"></ul>
+    <ul id="storyList" class="story-list" aria-label="이야기 목록"></ul>
 
     <footer class="home-foot">
       <button id="moreBtn" class="foot-link" type="button">⚙️ 더보기</button>
@@ -44,44 +44,37 @@
     </footer>
   </section>
 
-  <!-- ===== 이야기 화면: 대본 보기 · 녹음 · 재생 ===== -->
-  <section id="story" class="screen">
-    <header class="story-head">
-      <button id="backBtn" class="icon-btn" aria-label="뒤로">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></svg>
-      </button>
-      <h2 id="storyTitle" class="story-title">이야기</h2>
-      <span class="head-spacer" aria-hidden="true"></span>
-    </header>
-
-    <!-- 누구 목소리인지 고르기 -->
-    <div class="voice-tabs" role="tablist" aria-label="목소리 고르기">
-      <button class="voice-tab active" data-voice="mom" role="tab">👩 엄마</button>
-      <button class="voice-tab" data-voice="dad" role="tab">👨 아빠</button>
+  <!-- ===== 녹음 화면(부모용): 장면마다 녹음하고 확인 ===== -->
+  <section id="rec" class="screen rec-screen">
+    <div class="rec-top">
+      <div class="topbar">
+        <button id="recHome" class="homebtn" type="button" aria-label="이야기 목록으로">🏠</button>
+        <h2 id="recTitle" class="rec-title">이야기</h2>
+        <span class="head-spacer" aria-hidden="true"></span>
+      </div>
+      <div class="voices" role="tablist" aria-label="목소리 고르기">
+        <button class="vtab on" data-voice="mom" role="tab">👩 엄마</button>
+        <button class="vtab" data-voice="dad" role="tab">👨 아빠</button>
+      </div>
+      <div id="recProg" class="prog"></div>
+      <p id="legacyNote" class="legacy-note" hidden></p>
     </div>
-    <p class="voice-hint">엄마·아빠 <b>각각</b> 목소리를 담을 수 있어요</p>
 
-    <!-- 대본 -->
-    <div id="scriptBody" class="script-body"></div>
-
-    <!-- 녹음/재생 조작판 -->
-    <div class="dock">
-      <div id="dockStatus" class="dock-status"></div>
-      <div id="dockControls" class="dock-controls"></div>
+    <div class="stage">
+      <div id="recArt" class="art scene-in">🌙</div>
+      <div id="recText" class="text scene-in"></div>
     </div>
+
+    <div id="recBottom" class="rec-bottom"></div>
   </section>
 
-  <!-- ===== 보기 화면(아기용): 밤 무드등 + 목소리 (글자 없음) ===== -->
-  <section id="player" class="screen player">
-    <button id="playerClose" class="player-close" aria-label="닫기">✕</button>
-    <div class="mood">
-      <div class="mood-emoji" id="moodEmoji" aria-hidden="true">🌙</div>
-      <p class="mood-title" id="moodTitle"></p>
+  <!-- ===== 들려주기 화면(아기용): 목소리 따라 그림이 넘어감 ===== -->
+  <section id="play" class="screen play-screen">
+    <div id="playStage" class="stage">
+      <div id="playArt" class="art scene-in">🌙</div>
+      <div id="playText" class="text scene-in"></div>
     </div>
-    <div class="player-controls">
-      <button id="shuffleToggle" class="pill" type="button" aria-pressed="false">🔀 이어서 자동 재생</button>
-      <button id="playPause" class="pill pill-main" type="button" aria-label="재생/멈춤">⏸ 멈춤</button>
-    </div>
+    <div id="pauseOv" class="pause-ov" hidden></div>
   </section>
 
   <!-- ===== 공용 모달(이름 · 더보기[백업·도움말·의견]) ===== -->
