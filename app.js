@@ -20,6 +20,15 @@
   const APP_VERSION = "v23";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
+  /* 의견 받는 곳 — 구글 폼
+   * 사용자는 앱 안의 예쁜 폼에 쓰고, 내용은 조용히 구글 폼으로 넘어가 스프레드시트에 쌓인다.
+   * 아래 세 값은 민정이 만든 구글 폼에서 가져온다 (만드는 법: ROADMAP "의견 받기" 참고).
+   *   id      : https://docs.google.com/forms/d/e/○○○○○/viewform 의 ○○○○○
+   *   message : 내용 칸의 entry 번호  (예: "entry.1234567890")
+   *   email   : 이메일 칸의 entry 번호
+   * 비워 두면 예전 방식(Netlify Forms)으로 보낸다. */
+  const FEEDBACK_FORM = { id: "", message: "", email: "" };
+
   const $ = (id) => document.getElementById(id);
   const STORIES = window.SCRIPTS;
 
@@ -635,14 +644,36 @@
     buildBackup();   // 모달 열자마자 파일 준비 → 버튼 누르는 즉시 공유창이 뜨게
   }
 
-  // 의견 보내기 (더보기 모달 안 폼 → Netlify Forms)
+  /* 의견 보내기 (더보기 모달 안 폼 → 구글 폼, 없으면 Netlify Forms)
+   * 어떤 화면·어떤 버전에서 온 의견인지 알면 고치기 쉬워서, 내용 끝에 짧은 꼬리표를 붙인다.
+   * (개인을 알아볼 수 있는 건 아무것도 보내지 않는다) */
+  function envTag() {
+    const ua = navigator.userAgent || "";
+    const device = /iPad|iPhone|iPod/.test(ua) ? "아이폰·아이패드" : /Android/i.test(ua) ? "안드로이드" : "그 밖";
+    const installed = (window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)) ? " · 홈화면 앱" : "";
+    return `별밤책 ${APP_VERSION} · ${device}${installed}`;
+  }
   async function sendFeedback() {
     const msg = $("fbMsg").value.trim(); const email = $("fbEmail").value.trim();
     if (!msg) { toast("내용을 적어주세요"); return; }
     const btn = $("fbSend"); btn.disabled = true; btn.textContent = "보내는 중…";
     try {
-      await fetch("/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ "form-name": "feedback", message: msg, email: email, "bot-field": "" }).toString() });
+      if (FEEDBACK_FORM.id && FEEDBACK_FORM.message) {
+        const body = new URLSearchParams();
+        body.set(FEEDBACK_FORM.message, msg + "\n\n— " + envTag());
+        if (FEEDBACK_FORM.email && email) body.set(FEEDBACK_FORM.email, email);
+        // 구글 폼은 다른 사이트에서 오는 요청에 답을 안 준다(no-cors) → 보냈는지 확인은 못 한다.
+        //   전송 자체는 되므로, 통신이 끊긴 게 아니면 보낸 것으로 본다.
+        await fetch(`https://docs.google.com/forms/d/e/${FEEDBACK_FORM.id}/formResponse`, {
+          method: "POST", mode: "no-cors",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+      } else {
+        await fetch("/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ "form-name": "feedback", message: msg, email: email, "bot-field": "" }).toString() });
+      }
       toast("보내주셔서 고마워요 💛"); track("feedback"); closeModal();
     } catch (e) { toast("전송에 실패했어요. 잠시 후 다시 시도해 주세요"); btn.disabled = false; btn.textContent = "보내기"; }
   }
