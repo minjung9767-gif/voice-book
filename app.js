@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v30";
+  const APP_VERSION = "v31";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -122,6 +122,7 @@
     hasLegacy: false,              // 예전(통) 녹음이 남아 있는지
     recorder: null, chunks: [], stream: null, recording: false,
     preview: null, previewOn: false,
+    histMap: {},                   // { 장면번호: 지난 녹음 개수 }
   };
   // 들려주기 상태
   const pb = {
@@ -160,8 +161,55 @@
   async function dbAllKeys() { const s = await store(); return new Promise((res, rej) => { const r = s.getAllKeys(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }); }
   async function dbAll() { const s = await store(); return new Promise((res, rej) => { const r = s.getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }); }
 
+  async function dbDel(key) { const st = await store("readwrite"); return new Promise((res, rej) => { const r = st.delete(key); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
+
   const sceneKey = (storyId, voice, i) => `${storyId}:${STORE_VER}:${voice}:${i}`;
   const legacyKey = (storyId, voice) => `${storyId}:${voice}`;
+
+  /* ===== 지난 녹음(이력) =====
+   * 다시 녹음해도 예전 것을 지우지 않고 `본래열쇠#h시각` 으로 옮겨 둔다.
+   * "다시 녹음했는데 예전 게 더 좋았다"를 되돌릴 수 있게 하기 위함.
+   * 장면마다 최근 HISTORY_KEEP 개까지만 남기고 오래된 건 조용히 정리한다
+   * (무제한으로 쌓으면 백업 파일이 너무 커져서, 정작 백업이 못 쓰게 된다).
+   * ⚠️ `#h` 뒤 부분 때문에 loadProgress 의 `split(":")` 검사에서 자동으로 걸러진다
+   *    (장면 번호가 숫자가 아니게 되므로). 그래서 진행률에 섞여 들어가지 않는다. */
+  const HISTORY_KEEP = 3;
+  const histKey = (key, ts) => `${key}#h${ts}`;
+  const isHistKey = (k) => String(k).indexOf("#h") > 0;
+  const histOwner = (k) => String(k).slice(0, String(k).indexOf("#h"));
+  const histTime = (k) => +String(k).slice(String(k).indexOf("#h") + 2) || 0;
+
+  // 이 열쇠의 지난 녹음 열쇠들 (최근 것부터)
+  async function histKeysOf(key) {
+    let keys = [];
+    try { keys = await dbAllKeys(); } catch (e) { return []; }
+    return keys.filter((k) => isHistKey(k) && histOwner(k) === key).sort((a, b) => histTime(b) - histTime(a));
+  }
+  // 지금 녹음을 이력으로 밀어 넣고, 넘치는 건 정리한다
+  async function pushHistory(key) {
+    let cur = null;
+    try { cur = await dbGet(key); } catch (e) {}
+    if (!cur || !cur.blob) return;
+    const ts = cur.createdAt || Date.now();
+    let hk = histKey(key, ts);
+    try { if (await dbGet(hk)) hk = histKey(key, ts + 1); } catch (e) {}
+    try { await dbPut({ key: hk, blob: cur.blob, mime: cur.mime, createdAt: ts }); } catch (e) { return; }
+    const all = await histKeysOf(key);
+    for (const k of all.slice(HISTORY_KEEP)) { try { await dbDel(k); } catch (e) {} }
+  }
+  // "3분 전 · 어제 · 지난주" 처럼 쉬운 말로
+  function agoText(ms) {
+    if (!ms) return "언제인지 몰라요";
+    const s2 = Math.max(0, Date.now() - ms) / 1000;
+    if (s2 < 60) return "방금 전";
+    if (s2 < 3600) return Math.floor(s2 / 60) + "분 전";
+    if (s2 < 86400) return Math.floor(s2 / 3600) + "시간 전";
+    const d = Math.floor(s2 / 86400);
+    if (d === 1) return "어제";
+    if (d < 7) return d + "일 전";
+    if (d < 30) return Math.floor(d / 7) + "주 전";
+    return Math.floor(d / 30) + "달 전";
+  }
 
   // 모든 열쇠를 한 번에 훑어 이야기별 진행 상황을 만든다.
   //   → { [storyId]: { mom:Set(장면번호), dad:Set, momOld:bool, dadOld:bool } }
@@ -385,6 +433,23 @@
     rec.voice = storyVoice(p);                       // 이 이야기가 쓰는 목소리 자리
     rec.done = new Set(p ? p[rec.voice] : []);
     rec.hasLegacy = !!(p && p[rec.voice + "Old"]);
+    await loadHistMap();
+  }
+  /* 이 이야기·이 목소리의 '지난 녹음'이 장면마다 몇 개인지 미리 세어 둔다.
+   * (버튼을 그릴 때마다 저장소를 뒤지지 않으려고 한 번에 읽는다) */
+  async function loadHistMap() {
+    rec.histMap = {};
+    let keys = [];
+    try { keys = await dbAllKeys(); } catch (e) { return; }
+    const head = `${rec.story.id}:${STORE_VER}:${rec.voice}:`;
+    for (const k of keys) {
+      if (!isHistKey(k)) continue;
+      const owner = histOwner(k);
+      if (owner.indexOf(head) !== 0) continue;
+      const idx = +owner.slice(head.length);
+      if (!(idx >= 0)) continue;
+      rec.histMap[idx] = (rec.histMap[idx] || 0) + 1;
+    }
   }
   function paintRecScene(anim) {
     const sc = rec.story.scenes[rec.scene];
@@ -420,6 +485,11 @@
     if (rec.done.has(rec.scene) && !rec.recording) {
       html += `<button class="listen ${rec.previewOn ? "on" : ""}" id="bConfirm" type="button">${rec.previewOn ? "⏸ 멈추기" : "🔊 녹음 확인"}</button>`;
     }
+    // 다시 녹음한 장면에만 나타난다 — 평소엔 화면이 복잡해지지 않게
+    const hn = rec.histMap[rec.scene] || 0;
+    if (hn && !rec.recording) {
+      html += `<button class="listen" id="bHist" type="button">↩️ 지난 녹음 (${hn}개)</button>`;
+    }
     html += rec.recording
       ? `<button class="main-btn" id="bStop" type="button">■ 멈춤</button>`
       : `<button class="main-btn" id="bRec" type="button">🔴 ${rec.done.has(rec.scene) ? "이 장면 다시 녹음" : "이 장면 녹음"}</button>`;
@@ -428,6 +498,7 @@
     bind("bPrev", () => goScene(rec.scene - 1));
     bind("bNext", () => goScene(rec.scene + 1));
     bind("bConfirm", togglePreview);
+    bind("bHist", openHistory);
     bind("bRec", startRecording);
     bind("bStop", stopRecording);
   }
@@ -496,9 +567,12 @@
     const blob = new Blob(rec.chunks, { type: mime });
     releaseStream(); rec.recorder = null; rec.recording = false;
     if (!blob.size) { toast("녹음이 비어 있어요. 다시 해볼까요?"); renderRec(false); return; }
+    const key = sceneKey(rec.story.id, rec.voice, rec.scene);
     try {
-      await dbPut({ key: sceneKey(rec.story.id, rec.voice, rec.scene), storyId: rec.story.id, voice: rec.voice, scene: rec.scene, blob, mime, createdAt: Date.now() });
+      await pushHistory(key);                        // 예전 녹음을 '지난 녹음'으로 옮겨 둔다 (안 지운다)
+      await dbPut({ key, storyId: rec.story.id, voice: rec.voice, scene: rec.scene, blob, mime, createdAt: Date.now() });
       rec.done.add(rec.scene); track("record_save");
+      await loadHistMap();
     } catch (e) { toast("저장에 실패했어요 (저장 공간을 확인해 주세요)"); renderRec(false); return; }
     const N = sceneCount(rec.story);
     if (rec.done.size >= N) { toast("이 이야기를 다 녹음했어요 🎉  백업도 잊지 마세요!"); renderRec(true); return; }
@@ -529,6 +603,64 @@
       URL.revokeObjectURL(rec.preview.url); rec.preview = null;
     }
     rec.previewOn = false;
+  }
+
+  /* ===== ↩️ 지난 녹음 고르기 =====
+   * 다시 녹음했는데 예전 게 더 좋았을 때 되돌리는 창.
+   * 고르면 '맞바꾸기'라서, 지금 쓰던 것도 이력으로 남아 언제든 다시 되돌릴 수 있다. */
+  let histAudio = null;
+  function stopHistAudio() {
+    if (histAudio) { try { histAudio.pause(); } catch (e) {} if (histAudio.src) URL.revokeObjectURL(histAudio.src); histAudio = null; }
+  }
+  async function openHistory() {
+    stopPreview();
+    const key = sceneKey(rec.story.id, rec.voice, rec.scene);
+    const hks = await histKeysOf(key);
+    if (!hks.length) { toast("지난 녹음이 없어요"); return; }
+    let cur = null;
+    try { cur = await dbGet(key); } catch (e) {}
+    const row = (label, k, isNow) =>
+      `<li class="${isNow ? "now" : ""}">` +
+      `<span class="when">${isNow ? "<b>지금 쓰는 녹음</b> · " : ""}${label}</span>` +
+      `<button class="hb" type="button" data-play="${escapeHtml(k)}">▶</button>` +
+      (isNow ? "" : `<button class="hb pick" type="button" data-use="${escapeHtml(k)}">이걸로</button>`) +
+      `</li>`;
+    openModal(`
+      <div class="modal-body">
+        <h2>지난 녹음 ↩️</h2>
+        <p><b>${rec.scene + 1}번째 장면</b>이에요. 들어보고 마음에 드는 걸 고르세요.</p>
+        <ul class="hist">
+          ${row(agoText(cur && cur.createdAt), key, true)}
+          ${hks.map((k) => row(agoText(histTime(k)), k, false)).join("")}
+        </ul>
+        <p class="hint">고르면 <b>맞바꿔요</b> — 지금 쓰던 녹음도 지난 녹음으로 남아서 언제든 되돌릴 수 있어요.
+        장면마다 <b>최근 ${HISTORY_KEEP}개</b>까지 보관해요.</p>
+      </div>`);
+    modalBody.querySelectorAll("[data-play]").forEach((b) => b.addEventListener("click", async () => {
+      stopHistAudio();
+      let r = null;
+      try { r = await dbGet(b.dataset.play); } catch (e) {}
+      if (!r || !r.blob) { toast("녹음을 불러오지 못했어요"); return; }
+      histAudio = new Audio(URL.createObjectURL(r.blob));
+      histAudio.addEventListener("ended", stopHistAudio);
+      histAudio.play().catch(() => {});
+    }));
+    modalBody.querySelectorAll("[data-use]").forEach((b) => b.addEventListener("click", async () => {
+      stopHistAudio();
+      const hk = b.dataset.use;
+      let pick = null;
+      try { pick = await dbGet(hk); } catch (e) {}
+      if (!pick || !pick.blob) { toast("녹음을 불러오지 못했어요"); return; }
+      try {
+        await pushHistory(key);                                   // 지금 쓰던 걸 이력으로
+        await dbPut({ key, storyId: rec.story.id, voice: rec.voice, scene: rec.scene,
+          blob: pick.blob, mime: pick.mime, createdAt: Date.now() });
+        await dbDel(hk);                                          // 고른 것은 이력에서 뺀다
+        await loadHistMap();
+      } catch (e) { toast("바꾸지 못했어요"); return; }
+      closeModal(); renderRec(false);
+      toast("지난 녹음으로 되돌렸어요 ↩️"); track("history_restore");
+    }));
   }
 
   /* ================= 들려주기 (아기용) =================
@@ -672,6 +804,10 @@
    *   공유 직전에 await가 끼면 창이 안 뜬다. (카톡이 .json 을 거부해서 .txt 로 만든다) */
   let backupReady = null;     // { file, blob, count } | { empty:true } | null
   let backupBuilding = false;
+  /* 지난 녹음까지 담을지. 기본은 끈다 —
+   * 다 담으면 파일이 몇 배로 커져서, 아이폰이 백업 파일을 만들다 버거워질 수 있다.
+   * 폰을 바꾸기 전처럼 통째로 옮겨야 할 때만 켠다. */
+  let backupWithHistory = false;
   async function buildBackup() {
     backupReady = null; backupBuilding = true; updateBackupHint();
     try {
@@ -680,12 +816,14 @@
       const clips = [];
       for (const r of all) {
         if (!r || !r.key || !r.blob) continue;
+        if (!backupWithHistory && isHistKey(r.key)) continue;      // 지난 녹음은 기본으로 빼둔다
         clips.push({ key: r.key, mime: r.mime || r.blob.type || "audio/webm", createdAt: r.createdAt || Date.now(), data: await blobToDataURL(r.blob) });
       }
+      if (!clips.length) { backupReady = { empty: true, count: 0 }; return; }
       const payload = { app: "별밤책", kind: "scene-clips", version: 3, exportedAt: Date.now(), clips };
       const blob = new Blob([JSON.stringify(payload)], { type: "text/plain" });
       const file = new File([blob], "별밤책-백업.txt", { type: "text/plain" });
-      backupReady = { file, blob, count: clips.length };
+      backupReady = { file, blob, count: clips.length, bytes: blob.size };
     } catch (e) { backupReady = null; }
     finally { backupBuilding = false; updateBackupHint(); }
   }
@@ -693,7 +831,8 @@
     const h = $("backupHint"); if (!h) return;
     if (backupBuilding || !backupReady) { h.textContent = "백업 파일을 준비하고 있어요…"; return; }
     if (backupReady.empty) { h.textContent = "아직 백업할 녹음이 없어요."; return; }
-    h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음을 보낼 수 있어요.";
+    const mb = backupReady.bytes ? " · 약 " + Math.max(1, Math.round(backupReady.bytes / 1048576)) + "MB" : "";
+    h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음을 보낼 수 있어요" + mb + ".";
   }
   // 카톡/메일/드라이브 등으로 보내기. 공유창을 버튼 클릭 '즉시' 띄운다(중간 await 없음).
   async function sendBackup() {
@@ -869,7 +1008,7 @@
 
   /* ================= 모달 (이름 · 더보기) ================= */
   function openModal(html) { modalBody.innerHTML = html; modalEl.hidden = false; }
-  function closeModal() { modalEl.hidden = true; modalBody.innerHTML = ""; }
+  function closeModal() { stopHistAudio(); modalEl.hidden = true; modalBody.innerHTML = ""; }
 
   /* "이 폰은 누구 폰인가요?" — 녹음하러 처음 들어갈 때 한 번만 묻는다.
    * 더보기에서 언제든 바꿀 수 있다. */
@@ -941,6 +1080,8 @@
         <p>녹음은 이 기기 안에만 있어요. <b>카카오톡 ‘나에게 보내기’</b>로 백업해 두면,
         폰을 바꾸거나 실수로 지워져도 카톡에서 다시 <b>복원</b>할 수 있어요.</p>
         <button class="modal-btn gold" id="doBackup" type="button">💬 카카오톡으로 백업 보내기</button>
+        <label class="check"><input type="checkbox" id="bkHist" ${backupWithHistory ? "checked" : ""} />
+        <span>지난 녹음까지 함께 담기 <b>(파일이 커져요)</b></span></label>
         <p class="hint" id="backupHint">백업 파일을 준비하고 있어요…</p>
         <ol class="steps">
           <li>위 버튼을 누르면 <b>공유창</b>이 떠요</li>
@@ -1003,6 +1144,7 @@
       modalBody.querySelectorAll("[data-mv]").forEach((x) => x.classList.toggle("on", x === b));
       toast(`이 폰은 ${VOICE_LABEL[b.dataset.mv]} 폰이에요 🎤`);
     }));
+    $("bkHist").addEventListener("change", (e) => { backupWithHistory = e.target.checked; buildBackup(); });
     $("doBackup").addEventListener("click", sendBackup);
     $("doRestore").addEventListener("click", () => restoreInput.click());
     $("fbSend").addEventListener("click", sendFeedback);
