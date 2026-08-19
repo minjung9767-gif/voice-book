@@ -59,6 +59,8 @@ body {
   box-shadow: 0 0 14px 3px rgba(228, 220, 194, 0.14);
   opacity: 0.72;
 }
+/* 홈 말고 다른 화면에서는 장식 달을 숨긴다 (모서리 버튼과 겹치지 않게) */
+body.no-moon .moon { display: none; }
 
 /* ---------- 화면 전환 ---------- */
 .screen {
@@ -93,7 +95,27 @@ body {
 }
 .name-chip:active { transform: scale(.96); }
 
-/* 이야기 목록 */
+/* 이야기 그림 카드 (홈 = 아기 화면) — 2열, 순서 고정 */
+.story-grid {
+  list-style: none; margin: 0 auto; padding: 4px 16px 6px; overflow-y: auto; flex: 1;
+  -webkit-overflow-scrolling: touch; width: 100%; max-width: 560px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start;
+}
+.gcard {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+  background: var(--glass); border: 1px solid var(--glass-brd);
+  border-radius: 22px; padding: 16px 10px; min-height: 128px;
+  box-shadow: var(--shadow); cursor: pointer; outline: none;
+  transition: transform .12s ease, background .12s ease, opacity .12s ease; backdrop-filter: blur(6px);
+}
+.gcard:active { transform: scale(.97); background: rgba(255,255,255,.12); }
+.gcard:focus-visible { border-color: var(--gold); }
+.gcover { font-size: 42px; line-height: 1; filter: drop-shadow(0 4px 10px rgba(0,0,0,.4)); }
+.gname { font-size: 17px; line-height: 1.3; text-align: center; word-break: keep-all; color: var(--cream); }
+/* 아직 녹음 안 한 이야기 — 자리는 그대로 지키고 흐릿하게만 */
+.gcard.todo { opacity: .3; box-shadow: none; }
+
+/* 녹음할 이야기 고르기 (부모 화면) — 세로 목록 */
 .story-list {
   list-style: none; margin: 0 auto; padding: 8px 16px 4px; overflow-y: auto; flex: 1;
   -webkit-overflow-scrolling: touch; width: 100%; max-width: 560px;
@@ -123,21 +145,28 @@ body {
 .spill.part { color: #ffe4b0; border-color: rgba(255,233,179,.35); background: rgba(255,233,179,.1); }
 .spill.full { color: #bff0da; border-color: rgba(116,211,171,.5); background: rgba(116,211,171,.16); }
 .spill.old  { color: #cdd3f5; border-color: rgba(205,211,245,.3); background: rgba(205,211,245,.08); }
-.sright { display: flex; align-items: center; gap: 8px; flex: none; }
 .schev { font-size: 22px; color: var(--gold); flex: none; }
-.schev.play { color: var(--go); }
-.reBtn {
-  font-family: inherit; font-size: 18px; width: 42px; height: 42px; border-radius: 50%;
-  cursor: pointer; flex: none;
-  border: 1px solid rgba(255,233,179,.4); background: rgba(255,233,179,.12); color: #ffe9b3;
+
+/* 홈 위쪽: 쭉 들려주기 버튼 / 아직 녹음이 없을 때 안내 */
+.home-top { padding: 2px 16px 8px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.shuffle-btn {
+  font-family: inherit; font-size: 19px; cursor: pointer; width: 100%; max-width: 420px;
+  border: 1px solid rgba(255,233,179,.45); background: rgba(255,233,179,.14); color: #ffe9b3;
+  border-radius: 18px; padding: 13px 24px; box-shadow: var(--shadow);
 }
-.reBtn:active { transform: scale(.9); }
+.shuffle-btn:active { transform: scale(.98); }
+.empty-note {
+  margin: 0; font-size: 15px; line-height: 1.6; color: var(--muted);
+  text-align: center; word-break: keep-all; max-width: 420px;
+}
+.empty-note b { color: var(--gold); }
 
 .home-foot { padding: 6px 20px calc(8px + env(safe-area-inset-bottom)); text-align: center; }
+.foot-links { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 7px; }
 .foot-link {
   font-family: inherit; font-size: 15px;
   border: 1px solid var(--glass-brd); background: var(--glass);
-  color: var(--cream); border-radius: 999px; padding: 8px 18px; cursor: pointer; margin-bottom: 7px;
+  color: var(--cream); border-radius: 999px; padding: 8px 18px; cursor: pointer;
 }
 .foot-link:active { transform: scale(.96); }
 .privacy-note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); word-break: keep-all; }
@@ -163,12 +192,23 @@ body {
 /* ---------- 녹음 화면 ---------- */
 .rec-top { padding: 12px 16px 4px; display: flex; flex-direction: column; align-items: center; gap: 9px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; max-width: 520px; }
-.homebtn {
-  font-family: inherit; font-size: 20px; width: 42px; height: 42px; border-radius: 50%; cursor: pointer; flex: none;
-  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--cream-soft);
+/* 동그란 아이콘 버튼 (홈 · 뒤로) — 긴주 놀이터와 같은 모양 */
+.icon-btn {
+  width: 44px; height: 44px; flex: none; border-radius: 50%; cursor: pointer; padding: 0;
+  border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.14);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  transition: transform .1s ease, background .12s ease, opacity .15s ease;
 }
-.homebtn:active { transform: scale(.92); }
-.head-spacer { width: 42px; flex: none; }
+.icon-btn svg { width: 56%; height: 56%; display: block; }
+.icon-btn:active { transform: scale(.92); background: rgba(255,255,255,.24); }
+/* 들려주기 화면: 왼쪽 위 모서리에 은은하게 띄워 둔다 (읽는 중에도 계속 보임) */
+.corner-home {
+  position: absolute; z-index: 12; opacity: .5;
+  top: calc(10px + env(safe-area-inset-top)); left: calc(10px + env(safe-area-inset-left));
+}
+.corner-home:active { opacity: 1; }
+.head-spacer { width: 44px; flex: none; }
 .rec-title {
   /* 긴 제목이 두 줄이 되어도 위 버튼과 부딪히지 않게 여유 있는 줄간격 */
   font-family: "Dongle", "Jua", sans-serif; font-weight: 700; font-size: 32px; line-height: 1.12;
@@ -176,12 +216,6 @@ body {
   background: linear-gradient(180deg, #ffe9b3, #ffd79a 60%, #f4b46a);
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.voices { display: flex; gap: 8px; }
-.vtab {
-  font-family: inherit; font-size: 16px; padding: 7px 18px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--cream-soft); transition: all .15s ease;
-}
-.vtab.on { background: var(--gold); border-color: var(--gold); color: #3a2f10; }
 .prog { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-height: 16px; }
 .pdots { display: flex; gap: 5px; }
 .pd { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.16); }
@@ -225,6 +259,16 @@ body {
 }
 .main-btn:active { transform: scale(.98); }
 
+/* ---------- 녹음할 이야기 고르기 (부모용) ---------- */
+.pick-screen .topbar { padding: 12px 16px 0; margin: 0 auto; }
+.pick-title {
+  font-family: "Dongle", "Jua", sans-serif; font-weight: 700; font-size: 34px; line-height: 1.1;
+  margin: 0; flex: 1; min-width: 0; text-align: center;
+  background: linear-gradient(180deg, #ffe9b3, #ffd79a 60%, #f4b46a);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.pick-sub { margin: 2px 0 4px; font-size: 15px; color: var(--muted); text-align: center; }
+
 /* ---------- 들려주기 화면 (아기용) ---------- */
 .play-screen .stage { cursor: pointer; }
 .pause-ov {
@@ -238,12 +282,6 @@ body {
 @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
 .po-t { font-size: 23px; color: var(--gold); }
 .po-s { font-size: 14px; color: var(--muted); margin-top: -4px; word-break: keep-all; }
-.po-voices { display: flex; gap: 10px; margin-top: 4px; }
-.po-v {
-  font-family: inherit; font-size: 16px; padding: 8px 18px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--cream-soft);
-}
-.po-v.on { background: var(--gold); border-color: var(--gold); color: #3a2f10; }
 .po-btns { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
 .po-b {
   font-family: inherit; font-size: 17px; padding: 12px 20px; border-radius: 16px; cursor: pointer;

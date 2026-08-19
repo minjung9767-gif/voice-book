@@ -1,8 +1,9 @@
 /* =========================================================
  * 별밤책 — 앱 로직
  * ---------------------------------------------------------
- * 이야기 하나 = 여러 "장면". 장면마다 엄마·아빠가 따로 녹음한다.
+ * 이야기 하나 = 여러 "장면". 장면마다 목소리를 하나씩 녹음한다.
  * 아기에게 들려줄 땐 장면 클립을 순서대로 이어 재생하고, 그림도 함께 넘어간다.
+ * 한 편이 끝나면 다른 이야기로 저절로 이어진다(랜덤).
  *
  * 저장(IndexedDB `voicebook` / store `recordings`, 서버 없음):
  *   - 장면 클립 : `${storyId}:v2:${voice}:${장면번호}`   ← 지금 방식
@@ -10,14 +11,21 @@
  *   두 가지가 한 창고에 같이 있고, 예전 녹음은 지우지 않는다.
  *   예전 녹음만 있는 이야기는 '예전 녹음'으로 그대로 들을 수 있다.
  *
- * 화면: 홈(이야기 고르기) · 녹음(부모용) · 들려주기(아기용)
- *   - 녹음으로 가는 길은 홈에만 있다(아기가 실수로 못 지우게).
+ * 화면: 홈(아기용 그림 카드) · 이야기 고르기(부모용) · 녹음(부모용) · 들려주기(아기용)
+ *   - 홈은 아기 화면이다. 카드 순서는 대본 순서 그대로 절대 안 바뀐다
+ *     (아기가 "세 번째 칸이 돼지 이야기"처럼 자리로 기억하기 때문).
+ *   - 녹음은 홈 맨 아래 '🎙 녹음하기'로 한 단계 들어가야 나온다.
+ *
+ * 목소리: 예전에는 엄마·아빠를 따로 녹음했지만 지금은 한 명만 녹음한다.
+ *   이미 해 둔 녹음을 버리지 않으려고, 이야기마다 장면이 더 많이 녹음된 쪽을 쓴다
+ *   (수가 같으면 아빠). 안 쓰는 쪽도 지우지 않고 그대로 둔다.
  * ========================================================= */
 (() => {
   "use strict";
 
-  const VOICE_LABEL = { mom: "엄마", dad: "아빠" };
-  const APP_VERSION = "v23";
+  const VOICE_LABEL = { mom: "엄마", dad: "아빠" };   // 저장 열쇠에 쓰이는 이름(화면에는 안 보임)
+  const DEFAULT_VOICE = "mom";                       // 아무 녹음도 없을 때 새로 담을 자리
+  const APP_VERSION = "v24";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 의견 받는 곳 — 구글 폼
@@ -36,8 +44,9 @@
   const $ = (id) => document.getElementById(id);
   const STORIES = window.SCRIPTS;
 
-  const homeEl = $("home"), recEl = $("rec"), playEl = $("play");
-  const listEl = $("storyList"), footNote = $("footNote");
+  const homeEl = $("home"), pickEl = $("pick"), recEl = $("rec"), playEl = $("play");
+  const gridEl = $("storyGrid"), pickListEl = $("pickList"), footNote = $("footNote");
+  const shuffleBtn = $("shuffleBtn"), emptyNote = $("emptyNote");
   const nameChip = $("nameChip"), nameOwner = $("nameOwner");
   const recTitleEl = $("recTitle"), recProgEl = $("recProg"), recBottomEl = $("recBottom");
   const recArtEl = $("recArt"), recTextEl = $("recText"), legacyNoteEl = $("legacyNote");
@@ -47,7 +56,7 @@
 
   // 녹음 화면 상태
   const rec = {
-    story: null, voice: "mom", scene: 0,
+    story: null, voice: DEFAULT_VOICE, scene: 0,
     done: new Set(),               // 이 이야기·이 목소리에서 녹음된 장면 번호
     hasLegacy: false,              // 예전(통) 녹음이 남아 있는지
     recorder: null, chunks: [], stream: null, recording: false,
@@ -55,13 +64,21 @@
   };
   // 들려주기 상태
   const pb = {
-    story: null, voice: "mom", scene: 0, audio: null, url: null,
+    story: null, voice: DEFAULT_VOICE, scene: 0, audio: null, url: null,
     state: "idle",                 // idle | playing | paused | ended
     mode: "scenes",                // scenes | legacy
-    kinds: {},                     // { mom:"scenes"|"legacy"|null, dad:... }
+    prog: {},                      // 지금 재생에 쓰는 녹음 현황
+    list: [], listIdx: 0,          // 이어 들려줄 차례표(섞인 이야기 번호)와 현재 위치
+    nextTimer: null,               // 한 편이 끝나고 다음 편으로 넘어가기까지의 여운
   };
 
   const storyByIdx = (i) => STORIES[i];
+  /* 화면 바꾸기. 배경의 장식 달은 홈에서만 보이게 한다
+   * (다른 화면에선 오른쪽 위 버튼과 겹쳐서 지저분해 보인다) */
+  function setScreen(el) {
+    [homeEl, pickEl, recEl, playEl].forEach((sc) => sc.classList.toggle("active", sc === el));
+    document.body.classList.toggle("no-moon", el !== homeEl);
+  }
   const sceneCount = (s) => s.scenes.length;
 
   /* ================= IndexedDB ================= */
@@ -106,10 +123,23 @@
     }
     return map;
   }
-  // 이 이야기·이 목소리를 지금 들려줄 수 있나? "scenes"(장면 다 있음) | "legacy"(예전 녹음) | null
-  function voiceKind(prog, story, v) {
-    const p = prog[story.id];
+  const emptySlot = () => ({ mom: new Set(), dad: new Set(), momOld: false, dadOld: false });
+  /* 이 이야기가 쓸 '목소리 자리' 하나를 고른다.
+   * 엄마·아빠를 따로 녹음하던 시절의 녹음을 살리려고, 장면이 더 많이 담긴 쪽을 쓴다.
+   * 수가 같으면 아빠 쪽. (안 쓰는 쪽 녹음도 지우지 않고 그대로 남는다) */
+  function storyVoice(p) {
+    if (!p) return DEFAULT_VOICE;
+    if (p.dad.size > p.mom.size) return "dad";
+    if (p.mom.size > p.dad.size) return "mom";
+    if (p.dad.size > 0) return "dad";
+    if (p.dadOld) return "dad";
+    if (p.momOld) return "mom";
+    return DEFAULT_VOICE;
+  }
+  // 이 이야기를 지금 들려줄 수 있나? "scenes"(장면 다 있음) | "legacy"(예전 녹음) | null
+  function storyKind(p, story) {
     if (!p) return null;
+    const v = storyVoice(p);
     if (p[v].size >= sceneCount(story)) return "scenes";
     if (p[v + "Old"]) return "legacy";
     return null;
@@ -184,42 +214,36 @@
     }
   }
 
-  /* ================= 홈 화면 ================= */
+  /* ================= 홈 화면 (아기용) =================
+   * 그림 카드 2열. 순서는 대본 순서 그대로 — 녹음을 새로 해도 자리가 절대 안 바뀐다.
+   * 아직 녹음이 없는 이야기는 흐릿하게, 자리는 그대로 지킨다. */
+  let homeProg = {};
   async function renderHome() {
     const prog = await loadProgress();
-    let any = false;
-    listEl.innerHTML = STORIES.map((s, i) => {
-      const p = prog[s.id] || { mom: new Set(), dad: new Set(), momOld: false, dadOld: false };
-      const N = sceneCount(s);
-      const kinds = { mom: voiceKind(prog, s, "mom"), dad: voiceKind(prog, s, "dad") };
-      if (p.mom.size || p.dad.size || p.momOld || p.dadOld) any = true;
-
-      const pill = (icon, v) => {
-        if (kinds[v] === "legacy") return `<span class="spill old">${icon} ${VOICE_LABEL[v]} · 예전 녹음</span>`;
-        const c = p[v].size, cls = c === 0 ? "" : (c >= N ? "full" : "part");
-        return `<span class="spill ${cls}">${icon} ${VOICE_LABEL[v]} ${c}/${N}</span>`;
-      };
-      const playable = kinds.mom || kinds.dad;
-      const right = playable
-        ? `<span class="sright"><button class="reBtn" data-idx="${i}" type="button" aria-label="녹음 고치기">🎙</button><span class="schev play">▶</span></span>`
-        : `<span class="schev">❯</span>`;
-      return `<li class="scard" data-idx="${i}" data-play="${playable ? "1" : ""}" tabindex="0" role="button">` +
-        `<span class="scover" aria-hidden="true">${s.cover}</span>` +
-        `<span class="sinfo"><span class="sname">${escapeHtml(s.title)}</span>` +
-        `<span class="spills">${pill("👩", "mom")}${pill("👨", "dad")}</span></span>` +
-        right + `</li>`;
+    homeProg = prog;
+    let any = false, ready = 0;
+    gridEl.innerHTML = STORIES.map((s, i) => {
+      const p = prog[s.id];
+      if (p && (p.mom.size || p.dad.size || p.momOld || p.dadOld)) any = true;
+      const kind = storyKind(p, s);
+      if (kind) ready++;
+      return `<li class="gcard ${kind ? "" : "todo"}" data-idx="${i}" data-ready="${kind ? "1" : ""}" tabindex="0" role="button">` +
+        `<span class="gcover" aria-hidden="true">${s.cover}</span>` +
+        `<span class="gname">${escapeHtml(s.title)}</span></li>`;
     }).join("");
 
-    // 줄 전체 = 들을 수 있으면 들려주기 / 아니면 녹음하기
-    listEl.querySelectorAll(".scard").forEach((el) => {
-      const open = () => { const i = +el.dataset.idx; if (el.dataset.play) openPlay(i, prog); else openRec(i, prog); };
+    gridEl.querySelectorAll(".gcard").forEach((el) => {
+      const open = () => {
+        if (el.dataset.ready) openPlay(+el.dataset.idx, homeProg);
+        else toast("아직 녹음 전이에요 🎙  아래 ‘녹음하기’에서 담아 주세요");
+      };
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
     });
-    // 🎙 = 녹음 고치기 (아기 화면과 완전 분리 — 녹음 접근은 홈에서만)
-    listEl.querySelectorAll(".reBtn").forEach((el) => {
-      el.addEventListener("click", (e) => { e.stopPropagation(); openRec(+el.dataset.idx, prog); });
-    });
+
+    shuffleBtn.hidden = ready === 0;
+    emptyNote.hidden = ready !== 0;
+    if (!ready) emptyNote.innerHTML = "아직 담긴 목소리가 없어요.<br/>아래 <b>🎙 녹음하기</b>로 첫 이야기를 담아 주세요.";
 
     updateNameUI();
     updateFootNote(any);
@@ -227,22 +251,53 @@
   async function showHome() {
     if (rec.recording) { toast("녹음을 먼저 멈춰 주세요"); return; }
     stopEverything();
-    recEl.classList.remove("active"); playEl.classList.remove("active"); homeEl.classList.add("active");
+    setScreen(homeEl);
     await renderHome();
+  }
+
+  /* ================= 녹음할 이야기 고르기 (부모용) =================
+   * 아기 화면(홈)과 완전히 분리된 한 단계 안쪽 화면. 여기서만 녹음으로 들어간다. */
+  async function showPick() {
+    if (rec.recording) { toast("녹음을 먼저 멈춰 주세요"); return; }
+    stopEverything();
+    const prog = await loadProgress();
+    pickListEl.innerHTML = STORIES.map((s, i) => {
+      const p = prog[s.id] || emptySlot();
+      const v = storyVoice(p), N = sceneCount(s), c = p[v].size;
+      let pill;
+      if (c === 0 && storyKind(p, s) === "legacy") pill = `<span class="spill old">예전 녹음</span>`;
+      else if (c >= N) pill = `<span class="spill full">✅ 다 녹음했어요</span>`;
+      else if (c > 0) pill = `<span class="spill part">${c} / ${N} 녹음</span>`;
+      else pill = `<span class="spill">아직 녹음 전</span>`;
+      return `<li class="scard" data-idx="${i}" tabindex="0" role="button">` +
+        `<span class="scover" aria-hidden="true">${s.cover}</span>` +
+        `<span class="sinfo"><span class="sname">${escapeHtml(s.title)}</span>` +
+        `<span class="spills">${pill}</span></span>` +
+        `<span class="schev">❯</span></li>`;
+    }).join("");
+    pickListEl.querySelectorAll(".scard").forEach((el) => {
+      const open = () => openRec(+el.dataset.idx, prog);
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    });
+    setScreen(pickEl);
   }
 
   /* ================= 녹음 화면 (부모용) ================= */
   async function openRec(i, prog) {
     stopEverything();
-    rec.story = storyByIdx(i); rec.voice = "mom"; rec.scene = 0;
+    rec.story = storyByIdx(i); rec.scene = 0;
     recTitleEl.textContent = rec.story.title;
-    document.querySelectorAll(".vtab").forEach((t) => t.classList.toggle("on", t.dataset.voice === "mom"));
-    homeEl.classList.remove("active"); playEl.classList.remove("active"); recEl.classList.add("active");
+    setScreen(recEl);
     await loadRecState(prog);
+    // 이어서 녹음하기 편하게, 아직 녹음 안 한 첫 장면부터 보여준다
+    const N = sceneCount(rec.story);
+    for (let k = 0; k < N; k++) if (!rec.done.has(k)) { rec.scene = k; break; }
     renderRec(true);
   }
   async function loadRecState(prog) {
     const p = (prog && prog[rec.story.id]) || (await loadProgress())[rec.story.id];
+    rec.voice = storyVoice(p);                       // 이 이야기가 쓰는 목소리 자리
     rec.done = new Set(p ? p[rec.voice] : []);
     rec.hasLegacy = !!(p && p[rec.voice + "Old"]);
   }
@@ -265,7 +320,7 @@
     const showLegacy = rec.hasLegacy && rec.done.size < N && !rec.recording;
     legacyNoteEl.hidden = !showLegacy;
     if (showLegacy) {
-      legacyNoteEl.innerHTML = `예전에 통으로 녹음한 <b>${VOICE_LABEL[rec.voice]}</b> 목소리가 있어요. ` +
+      legacyNoteEl.innerHTML = `예전에 <b>통으로</b> 녹음한 게 있어요. ` +
         `그대로 들을 수 있고, 장면마다 다시 녹음하면 그림이 같이 넘어가요.`;
     }
   }
@@ -293,14 +348,6 @@
   }
   function renderRec(anim) { paintRecScene(anim); renderRecTop(); renderRecBottom(); }
 
-  async function setVoice(v) {
-    if (v === rec.voice || rec.recording) return;
-    stopPreview();
-    rec.voice = v; rec.scene = 0;
-    document.querySelectorAll(".vtab").forEach((t) => t.classList.toggle("on", t.dataset.voice === v));
-    await loadRecState(null);
-    renderRec(true);
-  }
   // 장면 이동. 녹음 확인 중이었다면 옮긴 장면의 녹음을 바로 이어 들려준다(빠른 확인).
   function goScene(i) {
     if (rec.recording) return;
@@ -315,11 +362,25 @@
   async function startRecording() {
     stopPreview();
     if (!navigator.mediaDevices || !window.MediaRecorder) { toast("이 브라우저는 녹음을 지원하지 않아요"); return; }
-    try { rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch (e) { toast("마이크 사용을 허용해 주세요 🎤"); return; }
+    /* 폰 브라우저는 마이크를 켤 때 기본으로 '통화용 처리'(에코 제거·소음 억제·자동 볼륨)를 건다.
+     * 그게 목소리를 실시간으로 깎고 붙여서 지지직거리거나 물속 소리처럼 만든다 → 모두 끈다.
+     * (대신 방 소음이 그대로 들어오므로 조용한 곳에서 녹음하는 게 좋다) */
+    try {
+      rec.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+      });
+    } catch (e) {
+      try { rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }   // 위 설정을 못 받는 기기 대비
+      catch (e2) { toast("마이크 사용을 허용해 주세요 🎤"); return; }
+    }
     const mime = pickMime();
-    try { rec.recorder = mime ? new MediaRecorder(rec.stream, { mimeType: mime }) : new MediaRecorder(rec.stream); }
-    catch (e) { rec.recorder = new MediaRecorder(rec.stream); }
+    const opts = { audioBitsPerSecond: 128000 };     // 음질 넉넉하게 (브라우저 기본값보다 2배쯤)
+    if (mime) opts.mimeType = mime;
+    try { rec.recorder = new MediaRecorder(rec.stream, opts); }
+    catch (e) {
+      try { rec.recorder = new MediaRecorder(rec.stream); }
+      catch (e2) { releaseStream(); toast("이 기기에서는 녹음할 수 없어요"); return; }
+    }
     rec.chunks = [];
     rec.recorder.ondataavailable = (e) => { if (e.data && e.data.size) rec.chunks.push(e.data); };
     rec.recorder.onstop = onRecorderStop;
@@ -369,22 +430,71 @@
    * 장면 클립을 순서대로 자동 재생하며 그림도 함께 넘어간다.
    * 예전(통) 녹음뿐인 이야기는 그 파일을 통째로 들려준다(그림은 표지 하나).
    * 화면 탭 = 멈춤 / 이어보기. 여기엔 녹음으로 가는 길이 없다. */
+  // 들려줄 수 있는 이야기(전 장면 녹음 완료 또는 예전 녹음) 번호만 모은다.
+  function playableIdxs(prog) {
+    const out = [];
+    STORIES.forEach((s, i) => { if (storyKind(prog[s.id], s)) out.push(i); });
+    return out;
+  }
+  // Fisher-Yates 섞기 (원본은 그대로, 섞인 새 배열 반환)
+  function shuffled(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  /* 이어 들려줄 '차례표'를 만든다. 이야기 단위로 섞으므로 한 바퀴 돌기 전엔 같은 이야기가 다시 안 나온다.
+   * firstIdx 를 주면 그 이야기를 맨 앞으로 (홈에서 직접 고른 경우). */
+  function buildPlaylist(prog, firstIdx) {
+    let list = shuffled(playableIdxs(prog));
+    if (firstIdx >= 0) { list = list.filter((n) => n !== firstIdx); list.unshift(firstIdx); }
+    pb.list = list; pb.listIdx = 0;
+  }
   function openPlay(i, prog) {
     stopEverything();
+    pb.prog = prog || {};
+    buildPlaylist(pb.prog, i);
+    beginStory(i);
+  }
+  // 🌙 쭉 들려주기 — 아무거나 골라서 계속 이어 재생
+  function openShuffle() {
+    const list = playableIdxs(homeProg);
+    if (!list.length) { toast("아직 녹음된 이야기가 없어요 🎙"); return; }
+    stopEverything();
+    pb.prog = homeProg;
+    buildPlaylist(pb.prog, -1);
+    track("play_shuffle");
+    beginStory(pb.list[0]);
+  }
+  function beginStory(i) {
+    clearNextTimer();
     pb.story = storyByIdx(i);
-    pb.kinds = { mom: voiceKind(prog, pb.story, "mom"), dad: voiceKind(prog, pb.story, "dad") };
-    pb.voice = pb.kinds.mom ? "mom" : "dad";
-    pb.mode = pb.kinds[pb.voice];
+    const p = pb.prog[pb.story.id];
+    pb.voice = storyVoice(p);
+    pb.mode = storyKind(p, pb.story) || "scenes";
     pb.scene = 0;
-    homeEl.classList.remove("active"); recEl.classList.remove("active"); playEl.classList.add("active");
+    setScreen(playEl);
     hidePauseOv();
     playCurrent(); track("play");
   }
+  // 한 편이 끝나면 차례표의 다음 편으로. 다 돌면 다시 섞는다(같은 이야기가 연달아 나오지 않게).
+  function nextStory() {
+    clearNextTimer();
+    if (!pb.list.length) { showHome(); return; }
+    pb.listIdx++;
+    if (pb.listIdx >= pb.list.length) {
+      const last = pb.list[pb.list.length - 1];
+      pb.list = shuffled(pb.list);
+      if (pb.list.length > 1 && pb.list[0] === last) pb.list.push(pb.list.shift());
+      pb.listIdx = 0;
+    }
+    beginStory(pb.list[pb.listIdx]);
+  }
+  function clearNextTimer() { if (pb.nextTimer) { clearTimeout(pb.nextTimer); pb.nextTimer = null; } }
   function paintPlayScene(anim) {
     if (pb.mode === "legacy") {
       playArtEl.textContent = pb.story.cover;
       playTextEl.innerHTML = `<span class="ln">${escapeHtml(pb.story.title)}</span>` +
-        `<span class="ln" style="font-size:15px;opacity:.7">${VOICE_LABEL[pb.voice]} 목소리 · 예전 녹음</span>`;
+        `<span class="ln" style="font-size:15px;opacity:.7">예전 녹음</span>`;
     } else {
       const sc = pb.story.scenes[pb.scene];
       playArtEl.textContent = sc.emoji;
@@ -411,45 +521,38 @@
     if (pb.mode === "scenes" && pb.scene < sceneCount(pb.story) - 1) { pb.scene++; playCurrent(); }
     else pbEnd();
   }
-  function pbPause() { if (pb.audio) { try { pb.audio.pause(); } catch (e) {} } pb.state = "paused"; showPauseOv("paused"); }
+  function pbPause() { clearNextTimer(); if (pb.audio) { try { pb.audio.pause(); } catch (e) {} } pb.state = "paused"; showPauseOv("paused"); }
   function pbResume() { hidePauseOv(); pb.state = "playing"; if (pb.audio) pb.audio.play().catch(() => {}); else playCurrent(); }
-  function pbRestart() { hidePauseOv(); stopPlayAudio(); pb.scene = 0; pb.state = "playing"; playCurrent(); }
-  function pbEnd() { stopPlayAudio(); pb.state = "ended"; showPauseOv("ended"); }
-  function pbSwitchVoice(v) {
-    if (v === pb.voice || !pb.kinds[v]) return;
-    pb.voice = v; pb.mode = pb.kinds[v]; pb.scene = 0;
-    stopPlayAudio(); showPauseOv("paused");
+  // 한 편이 끝나면 잠깐 여운을 두고 저절로 다른 이야기로 이어진다.
+  function pbEnd() {
+    stopPlayAudio(); pb.state = "ended"; showPauseOv("ended");
+    clearNextTimer();
+    pb.nextTimer = setTimeout(nextStory, 2600);
   }
   function stopPlayAudio() {
     if (pb.audio) { try { pb.audio.pause(); } catch (e) {} pb.audio = null; }
     if (pb.url) { URL.revokeObjectURL(pb.url); pb.url = null; }
   }
-  function stopPlayback() { stopPlayAudio(); pb.state = "idle"; hidePauseOv(); }
+  function stopPlayback() { clearNextTimer(); stopPlayAudio(); pb.state = "idle"; hidePauseOv(); }
 
   function hidePauseOv() { pauseOvEl.hidden = true; pauseOvEl.innerHTML = ""; }
   function showPauseOv(kind) {
-    const both = pb.kinds.mom && pb.kinds.dad;
     let html;
     if (kind === "paused") {
       html = `<div class="po-moon">🌙</div><div class="po-t">잠깐 멈췄어요</div>` +
         `<div class="po-s">화면을 다시 누르면 이어서 들려줘요</div>`;
       if (pb.mode === "legacy") html += `<div class="po-s">예전 녹음이에요. 장면마다 다시 녹음하면 그림이 함께 넘어가요.</div>`;
-      if (both) html += `<div class="po-voices">` +
-        `<button class="po-v ${pb.voice === "mom" ? "on" : ""}" type="button" data-v="mom">👩 엄마</button>` +
-        `<button class="po-v ${pb.voice === "dad" ? "on" : ""}" type="button" data-v="dad">👨 아빠</button></div>`;
-      html += `<div class="po-btns"><button class="po-b" type="button" data-a="home">🏠 목록으로</button>` +
-        `<button class="po-b" type="button" data-a="restart">🔁 처음부터</button></div>`;
+      html += `<div class="po-btns"><button class="po-b" type="button" data-a="next">🎲 다른 이야기</button></div>`;
     } else {
-      html = `<div class="po-moon">💤</div><div class="po-t">다 읽었어요</div>`;
-      if (pb.mode === "legacy") html += `<div class="po-s">예전 녹음이에요. 장면마다 다시 녹음하면 그림이 함께 넘어가요.</div>`;
-      html += `<div class="po-btns"><button class="po-b" type="button" data-a="home">🏠 목록으로</button>` +
-        `<button class="po-b" type="button" data-a="restart">🔁 다시 들려주기</button></div>`;
+      html = `<div class="po-moon">💤</div><div class="po-t">다 읽었어요</div>` +
+        `<div class="po-s">잠시 뒤 다른 이야기가 이어져요…</div>` +
+        `<div class="po-btns"><button class="po-b" type="button" data-a="next">🎲 지금 바로</button>` +
+        `<button class="po-b" type="button" data-a="stop">■ 그만 들을래요</button></div>`;
     }
     pauseOvEl.innerHTML = html; pauseOvEl.hidden = false;
-    pauseOvEl.querySelectorAll(".po-v").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); pbSwitchVoice(b.dataset.v); }));
     pauseOvEl.querySelectorAll(".po-b").forEach((b) => b.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (b.dataset.a === "home") showHome(); else pbRestart();
+      if (b.dataset.a === "next") nextStory(); else { clearNextTimer(); showHome(); }
     }));
   }
   // 무대 탭: 재생 중이면 멈춤. 멈춤 화면의 배경 탭 = 이어보기.
@@ -522,6 +625,7 @@
       }
       toast(n + "개 녹음을 되살렸어요 🛟"); track("restore");
       if (homeEl.classList.contains("active")) await renderHome();
+      else if (pickEl.classList.contains("active")) await showPick();
       else if (recEl.classList.contains("active")) { await loadRecState(null); renderRec(false); }
     } catch (e) { toast("복원에 실패했어요 (파일을 확인해 주세요)"); }
   }
@@ -610,7 +714,7 @@
           <li>위 버튼을 누르면 <b>공유창</b>이 떠요</li>
           <li><b>카카오톡</b> 선택 → <b>나에게 보내기</b>(내 채팅방)에 저장</li>
         </ol>
-        <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>두 목소리가 한 폰에 합쳐져요.</b></p>
+        <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.</p>
 
         <h3>📥 복원하기 (백업에서 되살리기)</h3>
         <ol class="steps">
@@ -625,13 +729,16 @@
 
         <h3 class="more-sec">❔ 사용법</h3>
         <h3>🎙️ 녹음하기</h3>
-        <p>홈에서 <b>아직 녹음 안 한 이야기</b>를 누르면 녹음 화면이 나와요.
-        장면마다 <b>🔴</b> 를 눌러 읽고, 다 읽으면 <b>■ 멈춤</b>. <b>🔊 녹음 확인</b>으로 들어볼 수 있어요.
-        엄마·아빠 목소리를 각각 담을 수 있어요.</p>
+        <p>홈 <b>맨 아래 🎙 녹음하기</b>를 누르면 이야기 목록이 나와요. 이야기를 고르고,
+        장면마다 <b>🔴</b> 를 눌러 읽고 다 읽으면 <b>■ 멈춤</b>. <b>🔊 녹음 확인</b>으로 들어볼 수 있어요.</p>
+        <p class="hint">🎤 <b>좋은 소리로 담는 요령:</b> 조용한 방에서, 마이크(폰 아래쪽)를 <b>한 뼘쯤</b> 떨어뜨리고
+        평소 말하듯 읽어주세요. 너무 가까우면 "퍽퍽" 소리가, 손이 마이크를 스치면 "지지직" 소리가 섞여요.</p>
         <h3>🌙 들려주기</h3>
-        <p>다 녹음한 이야기를 누르면 아기에게 <b>자동으로 넘어가며</b> 들려줘요. 목소리에 맞춰 그림도 함께 넘어가요.
-        화면을 누르면 잠깐 멈추고, 다시 누르면 이어서 들려줘요.</p>
-        <p class="hint">아기 화면에는 녹음으로 가는 길이 없어요(실수로 지울 일 없게). 다시 녹음은 <b>목록의 🎙 버튼</b>으로요.</p>
+        <p>홈에서 <b>또렷한 그림 카드</b>를 누르면 바로 들려줘요. 목소리에 맞춰 그림도 함께 넘어가요.
+        <b>한 편이 끝나면 다른 이야기가 저절로 이어져요.</b> 화면을 누르면 잠깐 멈추고, 다시 누르면 이어서 들려줘요.</p>
+        <p><b>🌙 쭉 들려주기</b>를 누르면 고르지 않아도 아무 이야기부터 계속 이어서 들려줘요. 재울 때 편해요.</p>
+        <p class="hint">아직 녹음 안 한 이야기는 <b>흐릿하게</b> 보여요. 자리는 그대로라서 아기가 외운 위치가 안 바뀌어요.
+        아기 화면에는 녹음으로 가는 길이 없어요(실수로 지울 일 없게).</p>
         <h3>👶 아기 이름 넣기</h3>
         <p>홈 화면 <b>제목 위 이름</b>(또는 “아기 이름 정하기”)을 누르면 바꿀 수 있어요.
         대본 속 <b>(아기 이름)</b> 자리에 쏙 들어가요.</p>
@@ -733,10 +840,14 @@
   nameChip.addEventListener("click", openName);
   nameOwner.addEventListener("click", openName);
   $("moreBtn").addEventListener("click", openMore);
+  $("recEntry").addEventListener("click", showPick);
+  shuffleBtn.addEventListener("click", openShuffle);
+  $("pickHome").addEventListener("click", showHome);
   $("recHome").addEventListener("click", showHome);
+  $("recBack").addEventListener("click", showPick);
+  $("playHome").addEventListener("click", (e) => { e.stopPropagation(); showHome(); });
   $("modalClose").addEventListener("click", closeModal);
   modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
-  document.querySelectorAll(".vtab").forEach((t) => t.addEventListener("click", () => setVoice(t.dataset.voice)));
   restoreInput.addEventListener("change", (e) => { restoreFromFile(e.target.files[0]); e.target.value = ""; });
   document.addEventListener("keydown", (e) => {
     if (!recEl.classList.contains("active") || rec.recording) return;

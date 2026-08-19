@@ -26,7 +26,9 @@
     <div class="moon"></div>
   </div>
 
-  <!-- ===== 홈 화면: 이야기 고르기 ===== -->
+  <!-- ===== 홈 화면(아기용): 이야기 고르기 =====
+       그림 카드 2열. 순서는 대본 순서 그대로 절대 안 바뀐다(아기가 위치로 기억하니까).
+       녹음이 아직 없는 이야기는 흐릿하게, 자리는 그대로 지킨다. -->
   <section id="home" class="screen active">
     <header class="home-head">
       <!-- 아기 이름: 넣으면 제목 위에 "○○이의", 없으면 아래 알약 버튼 -->
@@ -36,11 +38,37 @@
       <button id="nameChip" class="name-chip" type="button">👶 아기 이름 정하기</button>
     </header>
 
-    <ul id="storyList" class="story-list" aria-label="이야기 목록"></ul>
+    <div class="home-top">
+      <button id="shuffleBtn" class="shuffle-btn" type="button" hidden>🌙 쭉 들려주기</button>
+      <p id="emptyNote" class="empty-note" hidden></p>
+    </div>
+
+    <ul id="storyGrid" class="story-grid" aria-label="이야기 목록"></ul>
 
     <footer class="home-foot">
-      <button id="moreBtn" class="foot-link" type="button">⚙️ 더보기</button>
+      <div class="foot-links">
+        <button id="recEntry" class="foot-link" type="button">🎙 녹음하기</button>
+        <button id="moreBtn" class="foot-link" type="button">⚙️ 더보기</button>
+      </div>
       <p class="privacy-note" id="footNote"></p>
+    </footer>
+  </section>
+
+  <!-- ===== 녹음할 이야기 고르기(부모용) ===== -->
+  <section id="pick" class="screen pick-screen">
+    <div class="topbar">
+      <button id="pickHome" class="icon-btn" type="button" aria-label="홈으로" title="홈으로">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12 3.2l9 7.8h-2.2V20h-4.6v-5.4h-4.4V20H5V11H2.8L12 3.2z"/></svg>
+      </button>
+      <h2 class="pick-title">녹음하기</h2>
+      <span class="head-spacer" aria-hidden="true"></span>
+    </div>
+    <p class="pick-sub">어떤 이야기를 녹음할까요?</p>
+
+    <ul id="pickList" class="story-list" aria-label="녹음할 이야기 목록"></ul>
+
+    <footer class="home-foot">
+      <p class="privacy-note">🎤 조용한 방에서, 마이크는 <b>한 뼘 정도</b> 떨어뜨려 주세요</p>
     </footer>
   </section>
 
@@ -48,13 +76,13 @@
   <section id="rec" class="screen rec-screen">
     <div class="rec-top">
       <div class="topbar">
-        <button id="recHome" class="homebtn" type="button" aria-label="이야기 목록으로">🏠</button>
+        <button id="recBack" class="icon-btn" type="button" aria-label="녹음할 이야기 고르기로" title="이야기 고르기">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+        </button>
         <h2 id="recTitle" class="rec-title">이야기</h2>
-        <span class="head-spacer" aria-hidden="true"></span>
-      </div>
-      <div class="voices" role="tablist" aria-label="목소리 고르기">
-        <button class="vtab on" data-voice="mom" role="tab">👩 엄마</button>
-        <button class="vtab" data-voice="dad" role="tab">👨 아빠</button>
+        <button id="recHome" class="icon-btn" type="button" aria-label="홈으로" title="홈으로">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12 3.2l9 7.8h-2.2V20h-4.6v-5.4h-4.4V20H5V11H2.8L12 3.2z"/></svg>
+        </button>
       </div>
       <div id="recProg" class="prog"></div>
       <p id="legacyNote" class="legacy-note" hidden></p>
@@ -70,6 +98,10 @@
 
   <!-- ===== 들려주기 화면(아기용): 목소리 따라 그림이 넘어감 ===== -->
   <section id="play" class="screen play-screen">
+    <!-- 왼쪽 위 홈 버튼: 읽는 중에도 계속 보인다 -->
+    <button id="playHome" class="icon-btn corner-home" type="button" aria-label="홈으로" title="홈으로">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12 3.2l9 7.8h-2.2V20h-4.6v-5.4h-4.4V20H5V11H2.8L12 3.2z"/></svg>
+    </button>
     <div id="playStage" class="stage">
       <div id="playArt" class="art scene-in">🌙</div>
       <div id="playText" class="text scene-in"></div>
