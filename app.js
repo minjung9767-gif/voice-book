@@ -35,8 +35,19 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v29";
+  const APP_VERSION = "v30";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
+
+  /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
+   * ⚠️ 마지막 줄(사파리·크롬 안내)을 빼지 말 것 —
+   *    카톡으로 받아 카톡 안에서 열면 녹음이 따로 저장돼 나중에 "사라진 것처럼" 보인다. */
+  const SHARE_URL = "https://minjung9767-gif.github.io/voice-book/";
+  const SHARE_TEXT =
+    "🌙 별밤책 — 엄마·아빠 목소리로 읽어주는 아기 잠자리 그림책\n\n" +
+    "우리 아기한테 들려줄 동화를 직접 녹음해서 재생할 수 있어요.\n" +
+    "녹음은 내 폰 안에만 저장돼서 안심이에요. 무료고 설치도 필요 없어요!\n\n" +
+    SHARE_URL + "\n\n" +
+    "※ 카톡 안에서 바로 열면 녹음이 저장 안 될 수 있어요. 사파리·크롬으로 열어주세요 🙏";
 
   /* 의견 받는 곳 — 구글 폼
    * 사용자는 앱 안의 예쁜 폼에 쓰고, 내용은 조용히 구글 폼으로 넘어가 스프레드시트에 쌓인다.
@@ -85,7 +96,7 @@
     if (!Array.isArray(STORIES) || !STORIES.length || !STORIES[0].scenes) return false; // 대본이 딴 판
     // 뼈대에 있어야 할 자리들이 실제로 있는지도 확인
     if (document.querySelectorAll(".vtab").length !== 2) return false;
-    return [gridEl, pickListEl, shuffleBtn, emptyNote, $("recEntry"), $("playHome"), $("recBack"), $("pickHome")]
+    return [gridEl, pickListEl, shuffleBtn, emptyNote, $("shareBtn"), $("recEntry"), $("playHome"), $("recBack"), $("pickHome")]
       .every((el) => !!el);
   }
   function recoverFromMixedVersion() {
@@ -720,6 +731,37 @@
     } catch (e) { return ""; }
   }
 
+  /* 🎁 공유하기. 폰 공유창을 띄우고, 안 되면 주소를 복사해 준다.
+   * 아이폰은 '누르자마자' 공유창이 떠야 해서 앞에 await 를 두지 않는다. */
+  function shareApp() {
+    const data = { title: "별밤책 🌙", text: SHARE_TEXT, url: SHARE_URL };
+    if (navigator.share) {
+      navigator.share(data)
+        .then(() => { toast("공유했어요 🎁 고마워요!"); track("share"); })
+        .catch((e) => { if (!e || e.name !== "AbortError") copyShare(); });   // 취소는 조용히
+      return;
+    }
+    copyShare();
+  }
+  function copyShare() {
+    const done = () => { toast("주소를 복사했어요 📋  카톡에 붙여 넣어 주세요"); track("share_copy"); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(SHARE_TEXT).then(done, showShareText);
+    } else showShareText();
+  }
+  // 복사도 안 되는 환경: 글을 띄워서 직접 골라 복사하게
+  function showShareText() {
+    openModal(`
+      <div class="modal-body">
+        <h2>공유하기 🎁</h2>
+        <p>아래 글을 <b>꾹 눌러 복사</b>해서 카톡에 붙여 넣어 주세요.</p>
+        <textarea class="text-area" id="shareBox" readonly style="min-height:190px">${escapeHtml(SHARE_TEXT)}</textarea>
+      </div>`);
+    const box = $("shareBox");
+    if (box) { box.focus(); box.select(); }
+    track("share_manual");
+  }
+
   async function restoreFromFile(file) {
     if (!file) return;
     let payload = null;
@@ -1036,6 +1078,7 @@
   nameChip.addEventListener("click", openName);
   nameOwner.addEventListener("click", openName);
   $("moreBtn").addEventListener("click", openMore);
+  $("shareBtn").addEventListener("click", shareApp);
   $("recEntry").addEventListener("click", showPick);
   shuffleBtn.addEventListener("click", openShuffle);
   $("pickHome").addEventListener("click", showHome);
