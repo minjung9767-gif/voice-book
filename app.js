@@ -25,7 +25,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };   // 저장 열쇠에 쓰이는 이름(화면에는 안 보임)
   const DEFAULT_VOICE = "mom";                       // 아무 녹음도 없을 때 새로 담을 자리
-  const APP_VERSION = "v26";
+  const APP_VERSION = "v27";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 의견 받는 곳 — 구글 폼
@@ -74,6 +74,7 @@
     if (cssStamp() !== APP_VERSION) return false;                                    // 모양이 딴 판
     if (!Array.isArray(STORIES) || !STORIES.length || !STORIES[0].scenes) return false; // 대본이 딴 판
     // 뼈대에 있어야 할 자리들이 실제로 있는지도 확인
+    if (document.querySelectorAll(".vtab").length !== 2) return false;
     return [gridEl, pickListEl, shuffleBtn, emptyNote, $("recEntry"), $("playHome"), $("recBack"), $("pickHome")]
       .every((el) => !!el);
   }
@@ -277,9 +278,12 @@
       if (p && (p.mom.size || p.dad.size || p.momOld || p.dadOld)) any = true;
       const kind = storyKind(p, s);
       if (kind) ready++;
-      // 아직 못 들려주는 이야기엔 어디까지 녹음했는지 작게 붙여 준다("사라진 게 아니라 녹음 중")
+      // 들려줄 수 있으면 "누구 목소리인지", 아니면 "어디까지 녹음했는지"를 작게 붙인다.
       let tag = "";
-      if (!kind) {
+      if (kind) {
+        const v = storyVoice(p);
+        tag = `<span class="gvoice ${v}">🎤 ${VOICE_LABEL[v]}</span>`;
+      } else {
         const c = p ? p[storyVoice(p)].size : 0;
         tag = `<span class="gtodo">🎙 ${c ? c + " / " + sceneCount(s) : "녹음 전"}</span>`;
       }
@@ -320,11 +324,13 @@
     pickListEl.innerHTML = STORIES.map((s, i) => {
       const p = prog[s.id] || emptySlot();
       const v = storyVoice(p), N = sceneCount(s), c = p[v].size;
-      let pill;
-      if (c === 0 && storyKind(p, s) === "legacy") pill = `<span class="spill old">예전 녹음</span>`;
-      else if (c >= N) pill = `<span class="spill full">✅ 다 녹음했어요</span>`;
-      else if (c > 0) pill = `<span class="spill part">${c} / ${N} 녹음</span>`;
-      else pill = `<span class="spill">아직 녹음 전</span>`;
+      const has = c > 0 || p[v + "Old"];
+      // 녹음이 있으면 누구 목소리인지 먼저 보여준다
+      let pill = has ? `<span class="spill voice ${v}">🎤 ${VOICE_LABEL[v]}</span>` : "";
+      if (c === 0 && storyKind(p, s) === "legacy") pill += `<span class="spill old">예전 녹음</span>`;
+      else if (c >= N) pill += `<span class="spill full">✅ 다 녹음했어요</span>`;
+      else if (c > 0) pill += `<span class="spill part">${c} / ${N} 녹음</span>`;
+      else pill += `<span class="spill">아직 녹음 전</span>`;
       return `<li class="scard" data-idx="${i}" tabindex="0" role="button">` +
         `<span class="scover" aria-hidden="true">${s.cover}</span>` +
         `<span class="sinfo"><span class="sname">${escapeHtml(s.title)}</span>` +
@@ -346,6 +352,7 @@
     recTitleEl.textContent = rec.story.title;
     setScreen(recEl);
     await loadRecState(prog);
+    paintVoiceTabs();
     // 이어서 녹음하기 편하게, 아직 녹음 안 한 첫 장면부터 보여준다
     const N = sceneCount(rec.story);
     for (let k = 0; k < N; k++) if (!rec.done.has(k)) { rec.scene = k; break; }
@@ -403,6 +410,24 @@
     bind("bStop", stopRecording);
   }
   function renderRec(anim) { paintRecScene(anim); renderRecTop(); renderRecBottom(); }
+  function paintVoiceTabs() {
+    document.querySelectorAll(".vtab").forEach((t) => t.classList.toggle("on", t.dataset.voice === rec.voice));
+  }
+  /* 누구 목소리인지 바꾸기. 이야기 하나는 한 사람이 읽는다는 원칙은 그대로고,
+   * 여기서 고른 쪽에 녹음이 담긴다. 예전 녹음이 반대쪽에 있으면 그쪽 진행 상황이 보인다. */
+  async function setVoice(v) {
+    if (v === rec.voice || rec.recording) return;
+    stopPreview();
+    rec.voice = v; rec.scene = 0;
+    paintVoiceTabs();
+    const p = (await loadProgress())[rec.story.id];
+    rec.done = new Set(p ? p[v] : []);
+    rec.hasLegacy = !!(p && p[v + "Old"]);
+    const N = sceneCount(rec.story);
+    for (let k = 0; k < N; k++) if (!rec.done.has(k)) { rec.scene = k; break; }
+    renderRec(true);
+    toast(`${VOICE_LABEL[v]} 목소리로 녹음해요 🎤`);
+  }
 
   // 장면 이동. 녹음 확인 중이었다면 옮긴 장면의 녹음을 바로 이어 들려준다(빠른 확인).
   function goScene(i) {
@@ -455,8 +480,10 @@
     } catch (e) { toast("저장에 실패했어요 (저장 공간을 확인해 주세요)"); renderRec(false); return; }
     const N = sceneCount(rec.story);
     if (rec.done.size >= N) { toast("이 이야기를 다 녹음했어요 🎉  백업도 잊지 마세요!"); renderRec(true); return; }
-    // 아직 안 한 장면으로 바로 이동 (팝업 없이 진행 표시만 갱신)
-    for (let k = 1; k <= N; k++) { const i = (rec.scene + k) % N; if (!rec.done.has(i)) { rec.scene = i; break; } }
+    /* 다음 장면으로 — 반드시 '순서대로' 넘어간다.
+     * 예전엔 '아직 안 한 장면'으로 건너뛰었는데, 1번을 다시 녹음하면 6번으로 튀어서
+     * 2·3번을 이어서 다시 녹음할 수가 없었다. 처음부터 다시 담고 싶을 때 불편했다. */
+    if (rec.scene < N - 1) rec.scene++;
     renderRec(true);
   }
   function releaseStream() { if (rec.stream) { rec.stream.getTracks().forEach((t) => t.stop()); rec.stream = null; } }
@@ -901,6 +928,7 @@
   $("pickHome").addEventListener("click", showHome);
   $("recHome").addEventListener("click", showHome);
   $("recBack").addEventListener("click", showPick);
+  document.querySelectorAll(".vtab").forEach((t) => t.addEventListener("click", () => setVoice(t.dataset.voice)));
   $("playHome").addEventListener("click", (e) => { e.stopPropagation(); showHome(); });
   $("modalClose").addEventListener("click", closeModal);
   modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
