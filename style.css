@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v28";
+  --v: "v29";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
