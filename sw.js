@@ -3,7 +3,7 @@
  * 오프라인일 때만 캐시로 보여준다. → 업데이트가 폰에 바로 반영된다.
  * 파일을 크게 바꾸면 아래 CACHE 버전 숫자를 올린다.
  */
-const CACHE = "voicebook-v24";
+const CACHE = "voicebook-v25";
 const CORE = [
   "./",
   "./index.html",
@@ -29,7 +29,10 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// network-first: 최신을 먼저, 실패(오프라인)하면 캐시
+/* network-first: 최신을 먼저, 실패(오프라인)하면 캐시.
+ * ⚠️ 반드시 `cache: "no-store"` 로 받아야 한다.
+ * 그냥 fetch(req) 하면 브라우저가 몰래 갖고 있던 사본(GitHub Pages는 10분)을 줄 수 있고,
+ * 그러면 index.html 만 예전 것이고 app.js 는 새 것인 '반쪽 섞임'이 생겨 화면이 텅 빈다. */
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
@@ -37,7 +40,7 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin) return; // 폰트 등 외부는 브라우저에 맡김
 
   e.respondWith(
-    fetch(req)
+    fetch(req.url, { cache: "no-store", credentials: "same-origin" })
       .then((res) => {
         if (res && res.ok) {
           const copy = res.clone();

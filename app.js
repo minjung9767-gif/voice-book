@@ -25,7 +25,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };   // 저장 열쇠에 쓰이는 이름(화면에는 안 보임)
   const DEFAULT_VOICE = "mom";                       // 아무 녹음도 없을 때 새로 담을 자리
-  const APP_VERSION = "v24";
+  const APP_VERSION = "v25";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 의견 받는 곳 — 구글 폼
@@ -53,6 +53,26 @@
   const playStageEl = $("playStage"), playArtEl = $("playArt"), playTextEl = $("playText"), pauseOvEl = $("pauseOv");
   const modalEl = $("modal"), modalBody = $("modalBody");
   const restoreInput = $("restoreInput"), toastEl = $("toast");
+
+  /* ===== 반쪽 섞임 자가 복구 =====
+   * 폰이 화면 뼈대(index.html)는 예전 것을, 로직(app.js)은 새 것을 가져오는 일이 있다.
+   * (브라우저가 파일마다 따로 사본을 갖고 있어서 생긴다)
+   * 그러면 로직이 찾는 자리가 뼈대에 없어 화면이 텅 빈 채로 멈춘다.
+   * → 그럴 땐 갖고 있던 사본을 싹 비우고 딱 한 번만 새로고침해서 스스로 고친다. */
+  function recoverFromMixedVersion() {
+    try {
+      if (sessionStorage.getItem("mixFix") === "1") return;   // 한 번만 (무한 새로고침 방지)
+      sessionStorage.setItem("mixFix", "1");
+    } catch (e) { return; }
+    const again = () => location.reload();
+    if (window.caches && caches.keys) {
+      caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))).then(again, again);
+    } else again();
+  }
+  if ([gridEl, pickListEl, shuffleBtn, emptyNote, $("recEntry"), $("playHome"), $("recBack"), $("pickHome")].some((el) => !el)) {
+    recoverFromMixedVersion();
+    return;
+  }
 
   // 녹음 화면 상태
   const rec = {
@@ -227,15 +247,21 @@
       if (p && (p.mom.size || p.dad.size || p.momOld || p.dadOld)) any = true;
       const kind = storyKind(p, s);
       if (kind) ready++;
+      // 아직 못 들려주는 이야기엔 어디까지 녹음했는지 작게 붙여 준다("사라진 게 아니라 녹음 중")
+      let tag = "";
+      if (!kind) {
+        const c = p ? p[storyVoice(p)].size : 0;
+        tag = `<span class="gtodo">🎙 ${c ? c + " / " + sceneCount(s) : "녹음 전"}</span>`;
+      }
       return `<li class="gcard ${kind ? "" : "todo"}" data-idx="${i}" data-ready="${kind ? "1" : ""}" tabindex="0" role="button">` +
         `<span class="gcover" aria-hidden="true">${s.cover}</span>` +
-        `<span class="gname">${escapeHtml(s.title)}</span></li>`;
+        `<span class="gname">${escapeHtml(s.title)}</span>${tag}</li>`;
     }).join("");
 
     gridEl.querySelectorAll(".gcard").forEach((el) => {
       const open = () => {
         if (el.dataset.ready) openPlay(+el.dataset.idx, homeProg);
-        else toast("아직 녹음 전이에요 🎙  아래 ‘녹음하기’에서 담아 주세요");
+        else toast("아직 다 녹음하지 않았어요 🎙  아래 ‘녹음하기’에서 이어서 담아 주세요");
       };
       el.addEventListener("click", open);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
