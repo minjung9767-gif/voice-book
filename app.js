@@ -24,8 +24,18 @@
   "use strict";
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };   // 저장 열쇠에 쓰이는 이름(화면에는 안 보임)
-  const DEFAULT_VOICE = "mom";                       // 아무 녹음도 없을 때 새로 담을 자리
-  const APP_VERSION = "v27";
+  const DEFAULT_VOICE = "mom";                       // 이 폰의 주인을 아직 안 정했을 때만 쓰는 값
+
+  /* 이 폰의 주인(누가 녹음하는 사람인지).
+   * 부부가 각자 폰에서 녹음한 뒤 백업 파일을 주고받는 게 이 앱의 핵심인데,
+   * 두 사람이 같은 칸에 녹음하면 복원할 때 한쪽이 덮어써져 사라진다.
+   * 그래서 폰마다 주인을 정해 두고, 새 녹음은 늘 그 사람 칸에 담는다. */
+  function getMyVoice() {
+    try { const v = localStorage.getItem("myVoice"); return VOICE_LABEL[v] ? v : null; } catch (e) { return null; }
+  }
+  function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
+  const myVoice = () => getMyVoice() || DEFAULT_VOICE;
+  const APP_VERSION = "v28";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 의견 받는 곳 — 구글 폼
@@ -168,13 +178,13 @@
    * 엄마·아빠를 따로 녹음하던 시절의 녹음을 살리려고, 장면이 더 많이 담긴 쪽을 쓴다.
    * 수가 같으면 아빠 쪽. (안 쓰는 쪽 녹음도 지우지 않고 그대로 남는다) */
   function storyVoice(p) {
-    if (!p) return DEFAULT_VOICE;
+    if (!p) return myVoice();
     if (p.dad.size > p.mom.size) return "dad";
     if (p.mom.size > p.dad.size) return "mom";
     if (p.dad.size > 0) return "dad";
     if (p.dadOld) return "dad";
     if (p.momOld) return "mom";
-    return DEFAULT_VOICE;
+    return myVoice();
   }
   // 이 이야기를 지금 들려줄 수 있나? "scenes"(장면 다 있음) | "legacy"(예전 녹음) | null
   function storyKind(p, story) {
@@ -347,6 +357,7 @@
 
   /* ================= 녹음 화면 (부모용) ================= */
   async function openRec(i, prog) {
+    if (!getMyVoice()) { askMyVoice(() => openRec(i, prog)); return; }   // 처음 한 번만 묻는다
     stopEverything();
     rec.story = storyByIdx(i); rec.scene = 0;
     recTitleEl.textContent = rec.story.title;
@@ -692,25 +703,87 @@
     markBackedUp();
     toast("공유창이 안 떠서 파일로 저장했어요. 안 되면 사파리·크롬으로 열어 다시 해주세요");
   }
+  /* ===== 복원 = '합치기' =====
+   * 녹음이 사라지는 게 가장 치명적이므로 세 겹으로 지킨다.
+   *   ① 내가 갖고 있는데 파일에 없는 녹음은 절대 건드리지 않는다(삭제 없음).
+   *   ② 같은 자리에 둘 다 있으면 **더 나중에 녹음한 쪽**만 남긴다.
+   *      (예전엔 무조건 덮어써서, 어제 백업을 오늘 복원하면 오늘 녹음이 되돌아갔다)
+   *   ③ 넣기 전에 무엇이 늘고/바뀌고/그대로인지 보여주고 확인받는다.
+   * 엄마 칸과 아빠 칸은 자리가 다르므로, 서로 백업을 주고받으면 자연히 나란히 합쳐진다. */
+  let pendingRestore = null;
+
+  function ymd(ms) {
+    if (!ms) return "";
+    try {
+      const d = new Date(ms);
+      return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+    } catch (e) { return ""; }
+  }
+
   async function restoreFromFile(file) {
     if (!file) return;
-    try {
-      const payload = JSON.parse(await file.text());
-      // 지금 방식(clips) + 예전 방식(recordings) 백업 파일 둘 다 받는다
-      const list = payload && (Array.isArray(payload.clips) ? payload.clips : (Array.isArray(payload.recordings) ? payload.recordings : null));
-      if (!list) { toast("별밤책 백업 파일이 아니에요"); return; }
-      let n = 0;
-      for (const it of list) {
-        if (!it || !it.key || !it.data) continue;
+    let payload = null;
+    try { payload = JSON.parse(await file.text()); }
+    catch (e) { toast("백업 파일을 읽지 못했어요 (파일을 확인해 주세요)"); return; }
+    // 지금 방식(clips) + 예전 방식(recordings) 백업 파일 둘 다 받는다
+    const list = payload && (Array.isArray(payload.clips) ? payload.clips
+      : (Array.isArray(payload.recordings) ? payload.recordings : null));
+    if (!list || !list.length) { toast("별밤책 백업 파일이 아니에요"); return; }
+
+    // 지금 내 녹음과 견줘 본다
+    const mine = {};
+    try { (await dbAll()).forEach((r) => { if (r && r.key) mine[r.key] = r.createdAt || 0; }); } catch (e) {}
+    const add = [], newer = [], keep = [];
+    for (const it of list) {
+      if (!it || !it.key || !it.data) continue;
+      if (!(it.key in mine)) add.push(it);
+      else if ((it.createdAt || 0) > mine[it.key]) newer.push(it);
+      else keep.push(it);
+    }
+    pendingRestore = add.concat(newer);
+
+    const when = ymd(payload && payload.exportedAt);
+    const row = (icon, text, n) =>
+      `<li class="${n ? "" : "zero"}"><span>${icon} ${text}</span><span class="n">${n}개</span></li>`;
+    openModal(`
+      <div class="modal-body">
+        <h2>백업 합치기 📥</h2>
+        <p>${when ? `<b>${when}</b>에 만든 백업이에요. ` : ""}이렇게 합쳐질 거예요.</p>
+        <ul class="plan">
+          ${row("➕", "새로 들어와요", add.length)}
+          ${row("🔁", "더 새로 녹음한 걸로 바뀌어요", newer.length)}
+          ${row("✅", "내 것이 최신이라 그대로 둬요", keep.length)}
+        </ul>
+        <p class="hint">🔒 지금 갖고 있는 녹음은 <b>지워지지 않아요.</b>
+        같은 자리에 둘 다 있으면 <b>더 나중에 녹음한 쪽</b>만 남겨요.</p>
+        <button class="modal-btn gold" id="planGo" type="button">
+          ${pendingRestore.length ? `${pendingRestore.length}개 합치기` : "합칠 게 없어요"}
+        </button>
+        <button class="modal-btn ghost" id="planNo" type="button">취소</button>
+      </div>`);
+    $("planNo").addEventListener("click", () => { pendingRestore = null; closeModal(); });
+    $("planGo").addEventListener("click", applyRestore);
+  }
+
+  async function applyRestore() {
+    const list = pendingRestore || [];
+    pendingRestore = null;
+    const btn = $("planGo");
+    if (btn) { btn.disabled = true; btn.textContent = "합치는 중…"; }
+    let n = 0, fail = 0;
+    for (const it of list) {
+      try {
         const blob = await (await fetch(it.data)).blob();
         await dbPut({ key: it.key, blob, mime: it.mime || blob.type, createdAt: it.createdAt || Date.now() });
         n++;
-      }
-      toast(n + "개 녹음을 되살렸어요 🛟"); track("restore");
-      if (homeEl.classList.contains("active")) await renderHome();
-      else if (pickEl.classList.contains("active")) await showPick();
-      else if (recEl.classList.contains("active")) { await loadRecState(null); renderRec(false); }
-    } catch (e) { toast("복원에 실패했어요 (파일을 확인해 주세요)"); }
+      } catch (e) { fail++; }
+    }
+    closeModal();
+    toast(n ? `${n}개 녹음을 합쳤어요 🛟${fail ? ` (${fail}개 실패)` : ""}` : "이미 다 갖고 있어요 👍");
+    track("restore");
+    if (homeEl.classList.contains("active")) await renderHome();
+    else if (pickEl.classList.contains("active")) await showPick();
+    else if (recEl.classList.contains("active")) { await loadRecState(null); renderRec(false); }
   }
 
   /* ================= 시범 페이지(story-demo) 녹음 가져오기 =================
@@ -756,6 +829,30 @@
   function openModal(html) { modalBody.innerHTML = html; modalEl.hidden = false; }
   function closeModal() { modalEl.hidden = true; modalBody.innerHTML = ""; }
 
+  /* "이 폰은 누구 폰인가요?" — 녹음하러 처음 들어갈 때 한 번만 묻는다.
+   * 더보기에서 언제든 바꿀 수 있다. */
+  function askMyVoice(after) {
+    const cur = getMyVoice();
+    openModal(`
+      <div class="modal-body">
+        <h2>이 폰은 누구 폰인가요? 🎤</h2>
+        <p>여기서 녹음하는 목소리를 <b>이 사람 것</b>으로 담아 둘게요.
+        나중에 엄마·아빠가 <b>백업 파일을 주고받아도</b> 서로 덮어쓰지 않고 <b>나란히 합쳐져요.</b></p>
+        <div class="who">
+          <button class="who-b ${cur === "mom" ? "on" : ""}" type="button" data-v="mom">👩 엄마 폰</button>
+          <button class="who-b ${cur === "dad" ? "on" : ""}" type="button" data-v="dad">👨 아빠 폰</button>
+        </div>
+        <p class="hint">※ 나중에 <b>⚙️ 더보기</b>에서 바꿀 수 있어요. 이야기마다 따로 고르는 것도 그대로 돼요.</p>
+      </div>`);
+    modalBody.querySelectorAll(".who-b").forEach((b) => b.addEventListener("click", () => {
+      setMyVoice(b.dataset.v);
+      closeModal();
+      toast(`이 폰은 ${VOICE_LABEL[b.dataset.v]} 폰이에요 🎤`);
+      if (typeof after === "function") after();
+      else if (homeEl.classList.contains("active")) renderHome();
+    }));
+  }
+
   function openName() {
     const name = getBabyName();
     openModal(`
@@ -788,6 +885,16 @@
       <div class="modal-body">
         <h2>더보기 ⚙️</h2>
 
+        <h3 class="more-sec">🎤 이 폰은 누구 폰</h3>
+        <p>여기서 새로 녹음하면 <b>${getMyVoice() ? VOICE_LABEL[getMyVoice()] : "아직 안 정함"}</b> 목소리로 담겨요.
+        엄마·아빠가 각자 폰에 정해 두면, 백업을 주고받아도 <b>서로 덮어쓰지 않아요.</b></p>
+        <div class="who">
+          <button class="who-b ${getMyVoice() === "mom" ? "on" : ""}" type="button" data-mv="mom">👩 엄마 폰</button>
+          <button class="who-b ${getMyVoice() === "dad" ? "on" : ""}" type="button" data-mv="dad">👨 아빠 폰</button>
+        </div>
+
+        <hr class="more-hr" />
+
         <h3 class="more-sec">🛟 녹음 백업 · 복원</h3>
         <p>녹음은 이 기기 안에만 있어요. <b>카카오톡 ‘나에게 보내기’</b>로 백업해 두면,
         폰을 바꾸거나 실수로 지워져도 카톡에서 다시 <b>복원</b>할 수 있어요.</p>
@@ -797,7 +904,8 @@
           <li>위 버튼을 누르면 <b>공유창</b>이 떠요</li>
           <li><b>카카오톡</b> 선택 → <b>나에게 보내기</b>(내 채팅방)에 저장</li>
         </ol>
-        <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.</p>
+        <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.
+        복원은 <b>합치기</b>라서 내 녹음은 지워지지 않고, <b>더 새로 녹음한 쪽이 남아요.</b></p>
 
         <h3>📥 복원하기 (백업에서 되살리기)</h3>
         <ol class="steps">
@@ -848,6 +956,11 @@
         <hr class="more-hr" />
         <p class="hint" style="text-align:center;">🔒 녹음은 이 기기 안에만 저장돼요 · 서버에 올라가지 않아요<br/>별밤책 ${APP_VERSION}</p>
       </div>`);
+    modalBody.querySelectorAll("[data-mv]").forEach((b) => b.addEventListener("click", () => {
+      setMyVoice(b.dataset.mv);
+      modalBody.querySelectorAll("[data-mv]").forEach((x) => x.classList.toggle("on", x === b));
+      toast(`이 폰은 ${VOICE_LABEL[b.dataset.mv]} 폰이에요 🎤`);
+    }));
     $("doBackup").addEventListener("click", sendBackup);
     $("doRestore").addEventListener("click", () => restoreInput.click());
     $("fbSend").addEventListener("click", sendFeedback);
