@@ -25,7 +25,7 @@
 
   const VOICE_LABEL = { mom: "엄마", dad: "아빠" };   // 저장 열쇠에 쓰이는 이름(화면에는 안 보임)
   const DEFAULT_VOICE = "mom";                       // 아무 녹음도 없을 때 새로 담을 자리
-  const APP_VERSION = "v25";
+  const APP_VERSION = "v26";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 의견 받는 곳 — 구글 폼
@@ -54,25 +54,44 @@
   const modalEl = $("modal"), modalBody = $("modalBody");
   const restoreInput = $("restoreInput"), toastEl = $("toast");
 
-  /* ===== 반쪽 섞임 자가 복구 =====
-   * 폰이 화면 뼈대(index.html)는 예전 것을, 로직(app.js)은 새 것을 가져오는 일이 있다.
-   * (브라우저가 파일마다 따로 사본을 갖고 있어서 생긴다)
-   * 그러면 로직이 찾는 자리가 뼈대에 없어 화면이 텅 빈 채로 멈춘다.
-   * → 그럴 땐 갖고 있던 사본을 싹 비우고 딱 한 번만 새로고침해서 스스로 고친다. */
+  /* ===== 반쪽 섞임 막기 · 자가 복구 =====
+   * 앱은 뼈대(index.html) · 모양(style.css) · 로직(app.js) · 대본(scripts-data.js) 넷으로 돈다.
+   * 폰이 이 중 일부만 예전 것으로 가져오면 화면이 깨지거나 텅 빈다. 실제로 그런 일이 있었다.
+   *   - v24: 예전 index.html + 새 app.js  → 찾는 자리가 없어 목록이 안 그려짐
+   *   - v25: 예전 style.css + 새 index.html → 목록 칸이 납작해져 버튼이 위로 올라붙음
+   *
+   * 1차 방어(진짜 해결책): index.html 이 파일들을 `style.css?v=26` 처럼 **버전을 붙여** 부른다.
+   *   주소가 달라지므로 예전 사본이 절대 안 끼어든다. 새 버전을 낼 땐 네 곳을 같이 올린다 —
+   *   index.html(data-v) · style.css(--v) · app.js(APP_VERSION) · sw.js(CACHE).
+   * 2차 방어(안전망): 그래도 판이 어긋나면 캐시를 비우고 딱 한 번 새로고침해 스스로 고친다. */
+  function stampOf(el, attr) { try { return (el.getAttribute(attr) || "").trim(); } catch (e) { return ""; } }
+  function cssStamp() {
+    try { return getComputedStyle(document.documentElement).getPropertyValue("--v").replace(/["'\s]/g, ""); }
+    catch (e) { return ""; }
+  }
+  function versionsMatch() {
+    if (stampOf(document.documentElement, "data-v") !== APP_VERSION) return false;   // 뼈대가 딴 판
+    if (cssStamp() !== APP_VERSION) return false;                                    // 모양이 딴 판
+    if (!Array.isArray(STORIES) || !STORIES.length || !STORIES[0].scenes) return false; // 대본이 딴 판
+    // 뼈대에 있어야 할 자리들이 실제로 있는지도 확인
+    return [gridEl, pickListEl, shuffleBtn, emptyNote, $("recEntry"), $("playHome"), $("recBack"), $("pickHome")]
+      .every((el) => !!el);
+  }
   function recoverFromMixedVersion() {
     try {
       if (sessionStorage.getItem("mixFix") === "1") return;   // 한 번만 (무한 새로고침 방지)
       sessionStorage.setItem("mixFix", "1");
     } catch (e) { return; }
     const again = () => location.reload();
-    if (window.caches && caches.keys) {
-      caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))).then(again, again);
-    } else again();
+    const jobs = [];
+    if (window.caches && caches.keys) jobs.push(caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))));
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      jobs.push(navigator.serviceWorker.getRegistrations().then((rs) => Promise.all(rs.map((r) => r.unregister()))));
+    }
+    Promise.all(jobs).then(again, again);
   }
-  if ([gridEl, pickListEl, shuffleBtn, emptyNote, $("recEntry"), $("playHome"), $("recBack"), $("pickHome")].some((el) => !el)) {
-    recoverFromMixedVersion();
-    return;
-  }
+  if (!versionsMatch()) { recoverFromMixedVersion(); return; }
+  try { sessionStorage.removeItem("mixFix"); } catch (e) {}   // 판이 맞으면 복구 기록은 지운다
 
   // 녹음 화면 상태
   const rec = {
@@ -239,6 +258,17 @@
    * 아직 녹음이 없는 이야기는 흐릿하게, 자리는 그대로 지킨다. */
   let homeProg = {};
   async function renderHome() {
+    try { await renderHomeInner(); }
+    catch (e) {
+      // 여기서 막히면 예전엔 화면이 통째로 비어 "이야기가 사라졌다"고 보였다. 이유를 보여준다.
+      shuffleBtn.hidden = true; emptyNote.hidden = false;
+      emptyNote.innerHTML = "화면을 그리다 문제가 생겼어요 😢<br/>" +
+        "<b>앱을 완전히 껐다가 다시 열어</b> 주세요.<br/>" +
+        `<span style="font-size:12px;opacity:.7">(${APP_VERSION} · ${escapeHtml(String((e && e.message) || e)).slice(0, 80)})</span>`;
+      footNote.innerHTML = "🔒 <b>녹음은 안전해요</b> — 기기 안에 그대로 있어요";
+    }
+  }
+  async function renderHomeInner() {
     const prog = await loadProgress();
     homeProg = prog;
     let any = false, ready = 0;
