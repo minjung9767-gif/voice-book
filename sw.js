@@ -3,15 +3,15 @@
  * 오프라인일 때만 캐시로 보여준다. → 업데이트가 폰에 바로 반영된다.
  * 파일을 크게 바꾸면 아래 CACHE 버전 숫자를 올린다.
  */
-const CACHE = "voicebook-v28";
+const CACHE = "voicebook-v29";
 const CORE = [
   "./",
   "./index.html",
-  "./style.css?v=28",
-  "./app.js?v=28",
-  "./scripts-data.js?v=28",
-  "./analytics.js?v=28",
-  "./manifest.webmanifest?v=28",
+  "./style.css?v=29",
+  "./app.js?v=29",
+  "./scripts-data.js?v=29",
+  "./analytics.js?v=29",
+  "./manifest.webmanifest?v=29",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon.png",
