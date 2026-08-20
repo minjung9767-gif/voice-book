@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v35";
+  const APP_VERSION = "v36";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -261,6 +261,7 @@
     (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS 포함
+  const isAndroid = /Android/i.test(navigator.userAgent || "");
 
   let toastTimer = null;
   function toast(msg) { toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2600); }
@@ -1334,6 +1335,9 @@
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();          // 브라우저가 제멋대로 띄우지 않게 잡아 둔다
     installPrompt = e;
+    /* 이 이벤트가 왔다 = **아직 설치 안 됨**이라는 확실한 신호.
+     * 예전에 남긴 "설치했음" 기록을 지운다 — 안 지우면 앱을 지운 뒤에도 띠가 영영 안 뜬다. */
+    try { localStorage.removeItem("installed"); } catch (e2) {}
     updateInstallBar();
   });
   window.addEventListener("appinstalled", () => {
@@ -1365,11 +1369,15 @@
   function updateInstallBar() {
     if (!installBar) return;
     let already = isStandalone();
-    if (!already) { try { already = localStorage.getItem("installed") === "1"; } catch (e) {} }
-    // 인앱 브라우저(카톡 등)에서는 추가가 안 되므로 띠 대신 "사파리로 열기" 안내가 이미 뜬다
-    installBar.hidden = already || isInAppBrowser() || (!installPrompt && !isIOS);
+    /* "설치했음" 기록은 **설치 기회가 없을 때만** 참고한다.
+     * 안드로이드에서 앱을 지우면 브라우저가 다시 설치 기회를 주는데,
+     * 그때도 이 기록 때문에 띠를 숨기면 다시 설치할 길이 없어진다(v35에서 실제로 그랬다). */
+    if (!already && !installPrompt) { try { already = localStorage.getItem("installed") === "1"; } catch (e) {} }
+    // 인앱 브라우저(카톡 등)에서는 추가가 안 되므로 띠 대신 "사파리로 열기" 안내가 이미 뜬다.
+    // 안드로이드는 설치 기회가 아직 안 왔어도 직접 하는 법을 알려줄 수 있으므로 띠를 보여준다.
+    installBar.hidden = already || isInAppBrowser() || (!installPrompt && !isIOS && !isAndroid);
     // 안드로이드는 '설치'가, 아이폰은 '홈 화면에 추가'가 실제 동작에 맞는 말이다
-    installBar.textContent = installPrompt ? "📲 앱으로 설치하기" : "📲 홈 화면에 앱처럼 추가하기";
+    installBar.textContent = (installPrompt || isAndroid) ? "📲 앱으로 설치하기" : "📲 홈 화면에 앱처럼 추가하기";
   }
 
   function openInstallGuide() {
@@ -1386,8 +1394,27 @@
       }).catch(() => {});
       return;
     }
-    // 아이폰: 직접 해야 해서 방법을 알려준다
     track("install_guide");
+    // 안드로이드인데 설치 기회가 아직 안 온 경우 — 크롬 메뉴로 직접 하는 법
+    if (isAndroid) {
+      openModal(`
+        <div class="modal-body">
+          <h2>앱으로 설치하기 📲</h2>
+          <p>설치하면 <b>진짜 앱처럼</b> 열려요. 주소창 없이 화면을 꽉 채우고, 다시 찾기도 쉬워요.</p>
+          <ol class="steps-big">
+            <li><span>화면 <b>오른쪽 위 ⋮</b> (점 세 개)를 누르세요</span></li>
+            <li><span><b>“앱 설치”</b> 또는 <b>“홈 화면에 추가”</b> 를 누르세요</span></li>
+            <li><span><b>“설치”</b> 를 누르면 끝!</span></li>
+          </ol>
+          <p class="hint">설치하면 <b>앱 목록(앱 서랍)</b> 에 들어가요.
+          홈 화면에도 두고 싶으면 아이콘을 <b>꾹 눌러 끌어다 놓으세요.</b><br/>
+          ※ <b>크롬</b>에서만 돼요. 카톡·인스타 안에서 열었다면 먼저 크롬으로 열어주세요.</p>
+          <button class="modal-btn gold" id="igOk" type="button">알겠어요</button>
+        </div>`);
+      const ok2 = $("igOk"); if (ok2) ok2.addEventListener("click", closeModal);
+      return;
+    }
+    // 아이폰: 직접 해야 해서 방법을 알려준다
     openModal(`
       <div class="modal-body">
         <h2>앱처럼 쓰기 📲</h2>
