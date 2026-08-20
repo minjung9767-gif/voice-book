@@ -35,19 +35,19 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v34";
+  const APP_VERSION = "v35";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
    * ⚠️ 마지막 줄(사파리·크롬 안내)을 빼지 말 것 —
    *    카톡으로 받아 카톡 안에서 열면 녹음이 따로 저장돼 나중에 "사라진 것처럼" 보인다. */
   const SHARE_URL = "https://minjung9767-gif.github.io/voice-book/";
-  const SHARE_TEXT =
+  const SHARE_BODY =                       // 주소를 뺀 소개 글 (공유할 땐 주소를 따로 실어 보낸다)
     "🌙 별밤책 — 엄마·아빠 목소리로 읽어주는 아기 잠자리 그림책\n\n" +
     "우리 아기한테 들려줄 동화를 직접 녹음해서 재생할 수 있어요.\n" +
     "녹음은 내 폰 안에만 저장돼서 안심이에요. 무료고 설치도 필요 없어요!\n\n" +
-    SHARE_URL + "\n\n" +
     "※ 카톡 안에서 바로 열면 녹음이 저장 안 될 수 있어요. 사파리·크롬으로 열어주세요 🙏";
+  const SHARE_TEXT = SHARE_BODY + "\n\n" + SHARE_URL;   // 복사해서 붙여 넣을 때 쓰는 전체 글
 
   /* 의견 받는 곳 — 구글 폼
    * 사용자는 앱 안의 예쁜 폼에 쓰고, 내용은 조용히 구글 폼으로 넘어가 스프레드시트에 쌓인다.
@@ -979,11 +979,15 @@
   /* 🎁 공유하기. 폰 공유창을 띄우고, 안 되면 주소를 복사해 준다.
    * 아이폰은 '누르자마자' 공유창이 떠야 해서 앞에 await 를 두지 않는다. */
   function shareApp() {
-    /* ⚠️ 글(text)만 보낸다. url 을 따로 실어 보내면 앱에 따라 **주소만 가져가고 글을 버려서**,
-     * "사파리·크롬으로 열어주세요" 안내가 통째로 사라진다. 주소는 이미 글 안에 들어 있다.
-     * (백업에서 파일+글을 같이 보내다 파일이 누락된 것과 같은 종류의 문제 — v33) */
+    /* ⚠️ 글(text)과 주소(url)를 **둘 다** 실어 보낸다.
+     *   - v33 에서 글만 보내게 했더니 **안드로이드 카톡에 빈 메시지**가 갔다.
+     *     안드로이드 카톡은 주소가 없으면 아무것도 못 붙이는 것으로 보인다.
+     *   - 반대로 글 안에 주소를 또 넣으면 주소가 두 번 나온다 → 글에서는 주소를 뺐다(SHARE_BODY).
+     *   브라우저가 "글 + 주소"로 합쳐 주므로 받는 쪽에는 한 덩어리로 보인다.
+     * 🚨 title 은 넣지 않는다 — 앱에 따라 제목만 가져가고 본문을 버린다.
+     * (파일을 보낼 때는 반대로 파일만 보낸다 — sendBackup 참고) */
     if (navigator.share) {
-      navigator.share({ title: "별밤책 🌙", text: SHARE_TEXT })
+      navigator.share({ text: SHARE_BODY, url: SHARE_URL })
         .then(() => { toast("알려줬어요 🔗 고마워요!"); track("share"); })
         .catch((e) => { if (!e || e.name !== "AbortError") copyShare(); });   // 취소는 조용히
       return;
@@ -1336,9 +1340,27 @@
     installPrompt = null;
     try { localStorage.setItem("installed", "1"); } catch (e) {}
     updateInstallBar();
-    toast("홈 화면에 추가됐어요 📲");
     track("installed");
+    /* 안드로이드는 새로 설치한 앱을 보통 **앱 서랍(앱 목록)** 에만 넣는다.
+     * "홈 화면에 추가"를 눌렀는데 홈 화면에 없어서 당황했다는 제보가 있었다 → 두는 법을 알려준다. */
+    showAddToHomeGuide();
   });
+  function showAddToHomeGuide() {
+    openModal(`
+      <div class="modal-body">
+        <h2>설치됐어요 📲</h2>
+        <p>안드로이드는 새 앱을 보통 <b>앱 목록(앱 서랍)</b> 에 넣어요.
+        홈 화면에도 두고 싶으면 이렇게 하세요.</p>
+        <ol class="steps-big">
+          <li><span>앱 목록에서 <b>별밤책</b> 을 찾으세요</span></li>
+          <li><span>아이콘을 <b>꾹 누르세요</b></span></li>
+          <li><span>그대로 <b>홈 화면으로 끌어다 놓으면</b> 끝!</span></li>
+        </ol>
+        <p class="hint">💡 <b>설정 → 홈 화면</b> 에서 <b>“새 앱 홈 화면에 추가”</b> 를 켜두면 다음부터는 저절로 들어가요.</p>
+        <button class="modal-btn gold" id="ahOk" type="button">알겠어요</button>
+      </div>`);
+    const ok = $("ahOk"); if (ok) ok.addEventListener("click", closeModal);
+  }
 
   function updateInstallBar() {
     if (!installBar) return;
@@ -1346,6 +1368,8 @@
     if (!already) { try { already = localStorage.getItem("installed") === "1"; } catch (e) {} }
     // 인앱 브라우저(카톡 등)에서는 추가가 안 되므로 띠 대신 "사파리로 열기" 안내가 이미 뜬다
     installBar.hidden = already || isInAppBrowser() || (!installPrompt && !isIOS);
+    // 안드로이드는 '설치'가, 아이폰은 '홈 화면에 추가'가 실제 동작에 맞는 말이다
+    installBar.textContent = installPrompt ? "📲 앱으로 설치하기" : "📲 홈 화면에 앱처럼 추가하기";
   }
 
   function openInstallGuide() {
@@ -1354,8 +1378,11 @@
       const p = installPrompt; installPrompt = null;
       p.prompt();
       p.userChoice.then((r) => {
-        if (r && r.outcome === "accepted") track("install_accept");
-        else { installPrompt = p; updateInstallBar(); }     // 취소하면 다시 눌러볼 수 있게
+        if (r && r.outcome === "accepted") {
+          track("install_accept");
+          // appinstalled 이벤트가 안 오는 기기도 있어서, 여기서도 한 번 안내한다
+          setTimeout(() => { if (modalEl.hidden) showAddToHomeGuide(); }, 900);
+        } else { installPrompt = p; updateInstallBar(); }   // 취소하면 다시 눌러볼 수 있게
       }).catch(() => {});
       return;
     }
