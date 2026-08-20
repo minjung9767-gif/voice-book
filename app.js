@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v31";
+  const APP_VERSION = "v32";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -67,7 +67,7 @@
 
   const homeEl = $("home"), pickEl = $("pick"), recEl = $("rec"), playEl = $("play");
   const gridEl = $("storyGrid"), pickListEl = $("pickList"), footNote = $("footNote");
-  const shuffleBtn = $("shuffleBtn"), emptyNote = $("emptyNote");
+  const shuffleBtn = $("shuffleBtn"), emptyNote = $("emptyNote"), installBar = $("installBar");
   const nameChip = $("nameChip"), nameOwner = $("nameOwner");
   const recTitleEl = $("recTitle"), recProgEl = $("recProg"), recBottomEl = $("recBottom");
   const recArtEl = $("recArt"), recTextEl = $("recText"), legacyNoteEl = $("legacyNote");
@@ -96,7 +96,7 @@
     if (!Array.isArray(STORIES) || !STORIES.length || !STORIES[0].scenes) return false; // 대본이 딴 판
     // 뼈대에 있어야 할 자리들이 실제로 있는지도 확인
     if (document.querySelectorAll(".vtab").length !== 2) return false;
-    return [gridEl, pickListEl, shuffleBtn, emptyNote, $("shareBtn"), $("recEntry"), $("playHome"), $("recBack"), $("pickHome")]
+    return [gridEl, pickListEl, shuffleBtn, emptyNote, installBar, $("shareBtn"), $("recEntry"), $("playHome"), $("recBack"), $("pickHome")]
       .every((el) => !!el);
   }
   function recoverFromMixedVersion() {
@@ -255,6 +255,13 @@
   }
 
   /* ================= 유틸 ================= */
+  // 홈 화면 앱으로 열렸는지 / 아이폰인지 — 여러 곳에서 쓰므로 일찍 정해 둔다
+  const isStandalone = () =>
+    window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS 포함
+
   let toastTimer = null;
   function toast(msg) { toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2600); }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -376,6 +383,7 @@
 
     updateNameUI();
     updateFootNote(any);
+    updateInstallBar();
   }
   async function showHome() {
     if (rec.recording) { toast("녹음을 먼저 멈춰 주세요"); return; }
@@ -1209,6 +1217,65 @@
     const ok = $("iabOk"); if (ok) ok.addEventListener("click", closeModal);
   }
 
+  /* ===== 📲 홈 화면에 추가 =====
+   * 안드로이드·크롬: 브라우저가 미리 알려주는 설치 기회(beforeinstallprompt)를 붙잡아 뒀다가
+   *   버튼을 누르면 바로 설치창을 띄운다.
+   * 아이폰·사파리: 애플이 이 기능을 웹에 열어주지 않는다 → 자동 추가가 **불가능**하다.
+   *   대신 공유(⬆️) → "홈 화면에 추가" 하는 법을 그림처럼 또박또박 알려준다.
+   * 이미 홈 화면 앱으로 열었으면 띠를 아예 안 보여준다. */
+  let installPrompt = null;
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();          // 브라우저가 제멋대로 띄우지 않게 잡아 둔다
+    installPrompt = e;
+    updateInstallBar();
+  });
+  window.addEventListener("appinstalled", () => {
+    installPrompt = null;
+    try { localStorage.setItem("installed", "1"); } catch (e) {}
+    updateInstallBar();
+    toast("홈 화면에 추가됐어요 📲");
+    track("installed");
+  });
+
+  function updateInstallBar() {
+    if (!installBar) return;
+    let already = isStandalone();
+    if (!already) { try { already = localStorage.getItem("installed") === "1"; } catch (e) {} }
+    // 인앱 브라우저(카톡 등)에서는 추가가 안 되므로 띠 대신 "사파리로 열기" 안내가 이미 뜬다
+    installBar.hidden = already || isInAppBrowser() || (!installPrompt && !isIOS);
+  }
+
+  function openInstallGuide() {
+    // 안드로이드·크롬: 진짜 설치창을 띄운다
+    if (installPrompt) {
+      const p = installPrompt; installPrompt = null;
+      p.prompt();
+      p.userChoice.then((r) => {
+        if (r && r.outcome === "accepted") track("install_accept");
+        else { installPrompt = p; updateInstallBar(); }     // 취소하면 다시 눌러볼 수 있게
+      }).catch(() => {});
+      return;
+    }
+    // 아이폰: 직접 해야 해서 방법을 알려준다
+    track("install_guide");
+    openModal(`
+      <div class="modal-body">
+        <h2>앱처럼 쓰기 📲</h2>
+        <p>홈 화면에 추가하면 <b>진짜 앱처럼</b> 열려요. 주소창 없이 화면을 꽉 채우고, 다시 찾기도 쉬워요.</p>
+        <ol class="steps-big">
+          <li><span>화면 <b>아래쪽 공유 버튼 ⬆️</b> 을 누르세요<br/>
+            <i class="sub">사파리 맨 아래 가운데에 있어요</i></span></li>
+          <li><span>목록을 <b>쭉 내려서</b> <b>“홈 화면에 추가”</b> 를 누르세요</span></li>
+          <li><span>오른쪽 위 <b>“추가”</b> 를 누르면 끝!</span></li>
+        </ol>
+        <p class="hint">🌙 그러면 홈 화면에 <b>별밤책</b> 이 생겨요.<br/>
+        ※ <b>사파리</b>에서만 돼요. 카톡·인스타 안에서 열었다면 먼저 사파리로 열어주세요.</p>
+        <button class="modal-btn gold" id="igOk" type="button">알겠어요</button>
+      </div>`);
+    const ok = $("igOk"); if (ok) ok.addEventListener("click", closeModal);
+  }
+
   /* ================= 정리 ================= */
   function stopEverything() {
     stopPreview(); stopPlayback();
@@ -1223,6 +1290,7 @@
   $("shareBtn").addEventListener("click", shareApp);
   $("recEntry").addEventListener("click", showPick);
   shuffleBtn.addEventListener("click", openShuffle);
+  installBar.addEventListener("click", openInstallGuide);
   $("pickHome").addEventListener("click", showHome);
   $("recHome").addEventListener("click", showHome);
   $("recBack").addEventListener("click", showPick);
@@ -1242,11 +1310,6 @@
   // 화면 높이 맞추기.
   // - 홈 화면 앱(설치본): 툴바가 없으므로 CSS 100dvh(전체화면)를 그대로 쓴다 → 여백 없음.
   // - 사파리 등 브라우저: 툴바 때문에 어긋나므로 실제 보이는 높이를 직접 재서 맞춘다.
-  const isStandalone = () =>
-    window.navigator.standalone === true ||
-    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS 포함
   function setAppHeight() {
     // 기본: 실제 보이는 높이(브라우저·안드로이드·아이패드 모두 이게 맞음)
     let h = (window.visualViewport && window.visualViewport.height) || window.innerHeight || 0;
