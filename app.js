@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v32";
+  const APP_VERSION = "v33";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -839,6 +839,10 @@
     const h = $("backupHint"); if (!h) return;
     if (backupBuilding || !backupReady) { h.textContent = "백업 파일을 준비하고 있어요…"; return; }
     if (backupReady.empty) { h.textContent = "아직 백업할 녹음이 없어요."; return; }
+    if (isInAppBrowser()) {
+      h.innerHTML = "⚠️ <b>카톡·인스타 안</b>에서는 백업을 보낼 수 없어요. <b>사파리·크롬</b>으로 열어주세요.";
+      return;
+    }
     const mb = backupReady.bytes ? " · 약 " + Math.max(1, Math.round(backupReady.bytes / 1048576)) + "MB" : "";
     h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음을 보낼 수 있어요" + mb + ".";
   }
@@ -847,19 +851,53 @@
     if (backupBuilding || !backupReady) { toast("백업을 준비하고 있어요. 잠깐 뒤 다시 눌러주세요"); return; }
     if (backupReady.empty) { toast("백업할 녹음이 없어요"); return; }
     const { file, blob, count } = backupReady;
+    /* ⚠️ 공유할 땐 **파일만** 보낸다. title·text 를 같이 실으면
+     * 카카오톡 같은 앱이 **글만 받고 파일을 버리는** 일이 있다.
+     * (실제로 "공유는 눌렀는데 파일이 첨부가 안 됐다"는 제보를 받아 고쳤다 — v33)
+     * 절대 files 와 text 를 함께 보내도록 되돌리지 말 것. */
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "별밤책 백업", text: "별밤책 녹음 백업 파일이에요. 카톡 '나에게'에 보관하면 폰을 바꿔도 안전해요." });
+        await navigator.share({ files: [file] });
         markBackedUp();
         toast(count + "개 백업을 보냈어요 🛟  (카톡 ‘나에게’ 추천)"); track("backup"); return;
       }
     } catch (e) {
       if (e && e.name === "AbortError") return;   // 사용자가 취소
     }
-    // 공유가 안 되는 환경(일부 설치본 등): 파일로 저장 시도 + 안내
-    downloadBlob(blob, "별밤책-백업.txt");
-    markBackedUp();
-    toast("공유창이 안 떠서 파일로 저장했어요. 안 되면 사파리·크롬으로 열어 다시 해주세요");
+    backupFallback(blob);
+  }
+
+  /* 공유창이 안 뜨거나 파일 공유를 못 하는 환경.
+   * 예전엔 파일만 슬쩍 저장하고 작은 안내만 띄워서, 사용자는 "아무 일도 안 일어났다"고 느꼈다.
+   * 무슨 일이 있었는지와 다음에 뭘 하면 되는지를 분명히 보여준다. */
+  function backupFallback(blob) {
+    const iab = isInAppBrowser();
+    if (!iab) downloadBlob(blob, "별밤책-백업.txt");   // 인앱 브라우저는 저장도 잘 안 된다
+    markBackedUp(); track("backup_fallback");
+    openModal(`
+      <div class="modal-body">
+        <h2>${iab ? "여기서는 백업이 안 돼요 🙏" : "백업 파일을 저장했어요 🛟"}</h2>
+        ${iab
+          ? `<p>지금 <b>카카오톡·인스타 같은 앱 안</b>에서 열려 있어요.
+             여기서는 파일을 보낼 수가 없어요.</p>
+             <p><b>이렇게 해주세요:</b></p>
+             <ol class="steps-big">
+               <li><span>화면 <b>오른쪽 메뉴(⋯ 또는 나침반)</b> 를 누르세요</span></li>
+               <li><span><b>“다른 브라우저로 열기 / Safari로 열기”</b> 를 고르세요</span></li>
+               <li><span>거기서 <b>⚙️ 더보기 → 백업</b> 을 다시 눌러주세요</span></li>
+             </ol>`
+          : `<p>이 브라우저는 카톡으로 <b>바로 보내기</b>를 지원하지 않아서,
+             <b>별밤책-백업.txt</b> 파일로 저장했어요.</p>
+             <p><b>카톡으로 보내려면:</b></p>
+             <ol class="steps-big">
+               <li><span>카톡에서 <b>‘나에게’ 채팅방</b>을 여세요</span></li>
+               <li><span><b>+ 버튼 → 파일</b> 을 고르세요</span></li>
+               <li><span>방금 저장한 <b>별밤책-백업.txt</b> 를 고르면 끝!</span></li>
+             </ol>
+             <p class="hint">📁 파일은 <b>“파일” 앱</b>(안드로이드는 <b>다운로드</b> 폴더)에 있어요.</p>`}
+        <button class="modal-btn gold" id="bfOk" type="button">알겠어요</button>
+      </div>`);
+    const ok = $("bfOk"); if (ok) ok.addEventListener("click", closeModal);
   }
   /* ===== 복원 = '합치기' =====
    * 녹음이 사라지는 게 가장 치명적이므로 세 겹으로 지킨다.
@@ -881,10 +919,12 @@
   /* 🎁 공유하기. 폰 공유창을 띄우고, 안 되면 주소를 복사해 준다.
    * 아이폰은 '누르자마자' 공유창이 떠야 해서 앞에 await 를 두지 않는다. */
   function shareApp() {
-    const data = { title: "별밤책 🌙", text: SHARE_TEXT, url: SHARE_URL };
+    /* ⚠️ 글(text)만 보낸다. url 을 따로 실어 보내면 앱에 따라 **주소만 가져가고 글을 버려서**,
+     * "사파리·크롬으로 열어주세요" 안내가 통째로 사라진다. 주소는 이미 글 안에 들어 있다.
+     * (백업에서 파일+글을 같이 보내다 파일이 누락된 것과 같은 종류의 문제 — v33) */
     if (navigator.share) {
-      navigator.share(data)
-        .then(() => { toast("공유했어요 🎁 고마워요!"); track("share"); })
+      navigator.share({ title: "별밤책 🌙", text: SHARE_TEXT })
+        .then(() => { toast("알려줬어요 🔗 고마워요!"); track("share"); })
         .catch((e) => { if (!e || e.name !== "AbortError") copyShare(); });   // 취소는 조용히
       return;
     }
