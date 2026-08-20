@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v33";
+  const APP_VERSION = "v34";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -747,6 +747,51 @@
     }
     if (anim) [playArtEl, playTextEl].forEach((el) => { el.classList.remove("scene-in"); void el.offsetWidth; el.classList.add("scene-in"); });
   }
+  /* ===== 재생기는 하나만 쓴다 (화면 꺼도 이어지게) =====
+   * 장면마다 `new Audio()` 를 새로 만들면, 아이폰이 "사람이 안 눌렀는데 새로 트는 것"으로 보고
+   * 화면이 꺼진 동안 다음 장면 재생을 막아 버린다 → 한 장면만 나오고 멈춘다.
+   * 재생기 하나를 계속 쓰고 내용(src)만 갈아끼우면 "아까 사람이 튼 그것"으로 인정돼 이어진다.
+   * ⚠️ 다시 `new Audio()` 방식으로 되돌리지 말 것. */
+  let audioEl = null;
+  function getAudio() {
+    if (audioEl) return audioEl;
+    const a = new Audio();
+    a.preload = "auto";
+    a.setAttribute("playsinline", "");
+    a.addEventListener("ended", () => { if (pb.state === "playing") pbAdvance(); });
+    a.addEventListener("error", () => { if (pb.state === "playing") pbAdvance(); });
+    audioEl = a;
+    return a;
+  }
+
+  /* 잠금화면·제어센터에 "별밤책 · 커다란 순무" 와 ⏯️ 버튼을 띄운다.
+   * 음악 앱처럼 보여야 폰이 '진짜 재생 중'으로 대우해 줘서, 화면을 꺼도 소리가 이어진다. */
+  function setMediaSession() {
+    if (!("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      if (typeof MediaMetadata !== "undefined" && pb.story) {
+        const name = getBabyName();
+        ms.metadata = new MediaMetadata({
+          title: pb.story.title,
+          artist: name ? josaUi(name) + " 별밤책" : "별밤책 🌙",
+          album: (pb.scene + 1) + " / " + sceneCount(pb.story) + " 장면",
+          artwork: [
+            { src: "icons/icon-192.png", sizes: "192x192", type: "image/png" },
+            { src: "icons/icon-512.png", sizes: "512x512", type: "image/png" },
+          ],
+        });
+      }
+      ms.playbackState = pb.state === "playing" ? "playing" : "paused";
+      const on = (k, fn) => { try { ms.setActionHandler(k, fn); } catch (e) {} };
+      on("play", () => { if (pb.state !== "playing") pbResume(); });
+      on("pause", () => { if (pb.state === "playing") pbPause(); });
+      on("nexttrack", () => nextStory());                                   // 다른 이야기로
+      on("previoustrack", () => { if (pb.story) { pb.scene = 0; playCurrent(); } });  // 이 이야기 처음부터
+      on("stop", () => showHome());
+    } catch (e) {}
+  }
+
   async function playCurrent() {
     hidePauseOv(); paintPlayScene(true); pb.state = "playing";
     let clip = null;
@@ -754,29 +799,44 @@
     try { clip = await dbGet(key); } catch (e) {}
     if (pb.state !== "playing") return;             // 불러오는 사이에 멈췄으면 중단
     if (!clip) { pbAdvance(); return; }             // 혹시 빈 장면이면 건너뜀
-    stopPlayAudio();
+    const a = getAudio();
+    try { a.pause(); } catch (e) {}
+    const old = pb.url;
     pb.url = URL.createObjectURL(clip.blob);
-    const a = new Audio(pb.url); pb.audio = a;
-    a.addEventListener("ended", pbAdvance);
-    a.addEventListener("error", pbAdvance);
+    a.src = pb.url;
+    pb.audio = a;
+    if (old) URL.revokeObjectURL(old);            // 바꿔 끼운 뒤에 예전 것을 버린다
     a.play().catch(() => { /* 자동재생이 막히면 조용히 둔다 (화면 탭으로 이어감) */ });
+    setMediaSession();
   }
   function pbAdvance() {
     if (pb.state !== "playing") return;
     if (pb.mode === "scenes" && pb.scene < sceneCount(pb.story) - 1) { pb.scene++; playCurrent(); }
     else pbEnd();
   }
-  function pbPause() { clearNextTimer(); if (pb.audio) { try { pb.audio.pause(); } catch (e) {} } pb.state = "paused"; showPauseOv("paused"); }
-  function pbResume() { hidePauseOv(); pb.state = "playing"; if (pb.audio) pb.audio.play().catch(() => {}); else playCurrent(); }
+  function pbPause() {
+    clearNextTimer();
+    if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+    pb.state = "paused"; showPauseOv("paused"); setMediaSession();
+  }
+  function pbResume() {
+    hidePauseOv(); pb.state = "playing";
+    if (pb.audio && pb.url) pb.audio.play().catch(() => {}); else playCurrent();
+    setMediaSession();
+  }
   // 한 편이 끝나면 잠깐 여운을 두고 저절로 다른 이야기로 이어진다.
   function pbEnd() {
     stopPlayAudio(); pb.state = "ended"; showPauseOv("ended");
     clearNextTimer();
     pb.nextTimer = setTimeout(nextStory, 2600);
   }
+  /* 소리만 멈춘다. 재생기(audioEl)는 버리지 않고 계속 갖고 있는다 —
+   * 버렸다가 새로 만들면 화면 꺼진 동안 다시 못 틀게 된다. */
   function stopPlayAudio() {
-    if (pb.audio) { try { pb.audio.pause(); } catch (e) {} pb.audio = null; }
+    if (audioEl) { try { audioEl.pause(); } catch (e) {} }
     if (pb.url) { URL.revokeObjectURL(pb.url); pb.url = null; }
+    pb.audio = null;
+    if ("mediaSession" in navigator) { try { navigator.mediaSession.playbackState = "paused"; } catch (e) {} }
   }
   function stopPlayback() { clearNextTimer(); stopPlayAudio(); pb.state = "idle"; hidePauseOv(); }
 
@@ -1159,6 +1219,8 @@
         <p>홈에서 <b>또렷한 그림 카드</b>를 누르면 바로 들려줘요. 목소리에 맞춰 그림도 함께 넘어가요.
         <b>한 편이 끝나면 다른 이야기가 저절로 이어져요.</b> 화면을 누르면 잠깐 멈추고, 다시 누르면 이어서 들려줘요.</p>
         <p><b>🌙 쭉 들려주기</b>를 누르면 고르지 않아도 아무 이야기부터 계속 이어서 들려줘요. 재울 때 편해요.</p>
+        <p>🔒 <b>화면을 꺼도 소리는 계속 나와요.</b> 잠금화면에 이야기 제목과 ⏯️ 버튼이 떠서 거기서 멈추거나 넘길 수 있어요.
+        (폰·브라우저에 따라 다를 수 있어요)</p>
         <p class="hint">아직 녹음 안 한 이야기는 <b>흐릿하게</b> 보여요. 자리는 그대로라서 아기가 외운 위치가 안 바뀌어요.
         아기 화면에는 녹음으로 가는 길이 없어요(실수로 지울 일 없게).</p>
         <h3>👶 아기 이름 넣기</h3>
