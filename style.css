@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v31";
+  --v: "v32";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
@@ -184,6 +184,35 @@ body.no-moon .moon { display: none; }
 .empty-note b { color: var(--gold); }
 
 .home-foot { padding: 6px 20px calc(8px + env(safe-area-inset-bottom)); text-align: center; }
+/* 📲 홈 화면에 추가 안내 띠 — 아직 앱으로 안 쓰는 사람에게만 */
+.install-bar {
+  display: block; width: 100%; max-width: 420px; margin: 0 auto 9px;
+  font-family: inherit; font-size: 16px; padding: 12px 16px; cursor: pointer;
+  border-radius: 16px; border: 1px solid rgba(116,211,171,.45);
+  background: rgba(116,211,171,.14); color: #bff0da; word-break: keep-all;
+}
+.install-bar[hidden] { display: none; }
+.install-bar:active { transform: scale(.98); }
+
+/* 홈 화면에 추가하는 방법 안내 (아이폰) */
+.steps-big { list-style: none; margin: 14px 0 6px; padding: 0; counter-reset: st; }
+.steps-big li {
+  display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px;
+  font-family: "Gowun Dodum", sans-serif; font-size: 16px; line-height: 1.6;
+  color: var(--cream-soft); word-break: keep-all;
+}
+.steps-big li::before {
+  counter-increment: st; content: counter(st);
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--gold); color: #3a2f10;
+  font-family: "Jua", sans-serif; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+/* 글이 옆으로 흩어지지 않게, 번호 옆 내용은 한 덩어리로 묶는다 */
+.steps-big li > span { flex: 1; min-width: 0; }
+.steps-big b { color: var(--gold); }
+.steps-big .sub { display: block; font-style: normal; font-size: 14px; color: var(--muted); margin-top: 3px; }
+
 .foot-links { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 7px; }
 .foot-link {
   font-family: inherit; font-size: 15px;
