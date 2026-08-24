@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v36";
+  const APP_VERSION = "v37";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -72,7 +72,7 @@
   const recTitleEl = $("recTitle"), recProgEl = $("recProg"), recBottomEl = $("recBottom");
   const recArtEl = $("recArt"), recTextEl = $("recText"), legacyNoteEl = $("legacyNote");
   const playStageEl = $("playStage"), playArtEl = $("playArt"), playTextEl = $("playText"), pauseOvEl = $("pauseOv");
-  const modalEl = $("modal"), modalBody = $("modalBody");
+  const modalEl = $("modal"), modalBody = $("modalBody"), modalBackBtn = $("modalBack");
   const restoreInput = $("restoreInput"), toastEl = $("toast");
 
   /* ===== 반쪽 섞임 막기 · 자가 복구 =====
@@ -324,9 +324,11 @@
     if (typeof anyRecording === "boolean") homeHasRecording = anyRecording;
     if (homeHasRecording && !hasBackedUp()) {
       footNote.className = "privacy-note warn";
-      footNote.innerHTML = "🛟 아직 <b>백업</b> 전이에요 — 더보기에서 백업해 주세요";
+      footNote.setAttribute("role", "button"); footNote.tabIndex = 0;
+      footNote.innerHTML = "🛟 아직 <b>백업</b> 전이에요 — 눌러서 백업하기 ›";
     } else {
       footNote.className = "privacy-note";
+      footNote.removeAttribute("role"); footNote.removeAttribute("tabindex");
       footNote.innerHTML = "🔒 녹음은 <b>이 기기 안에만</b> 저장돼요";
     }
   }
@@ -1120,8 +1122,35 @@
   }
 
   /* ================= 모달 (이름 · 더보기) ================= */
-  function openModal(html) { modalBody.innerHTML = html; modalEl.hidden = false; }
-  function closeModal() { stopHistAudio(); modalEl.hidden = true; modalBody.innerHTML = ""; }
+  /* 모달 열기.
+   * back 을 주면 카드 왼쪽 위에 "‹ 더보기" 가 생긴다 (더보기 안에서 한 칸 들어간 화면).
+   *
+   * 안드로이드 뒤로가기: 예전엔 모달이 열려 있어도 뒤로가기를 누르면 앱이 통째로 닫혔다.
+   * 그래서 모달을 열 때 히스토리에 '한 칸'을 넣어 두고, 뒤로가기를 그 칸을 쓰는 데 쓴다.
+   *   상세 화면에서 뒤로 → 더보기 목록으로 (그리고 칸을 다시 하나 넣어 둔다)
+   *   목록에서 뒤로   → 모달 닫기
+   * 우리가 ✕ 로 직접 닫을 땐 넣어 둔 칸도 같이 치운다(뒤로가기가 헛돌지 않게). */
+  let modalBackFn = null;    // ‹ 뒤로 눌렀을 때 갈 곳
+  let modalNav = false;      // 히스토리에 우리 칸을 넣어 뒀나
+  let modalSelfBack = false; // 우리가 스스로 뒤로 간 것 → 그 popstate 는 무시
+  function pushModalState() {
+    if (modalNav) return;
+    try { history.pushState({ vbModal: 1 }, ""); modalNav = true; } catch (e) { modalNav = false; }
+  }
+  function openModal(html, back) {
+    modalBody.innerHTML = html;
+    modalBackFn = typeof back === "function" ? back : null;
+    if (modalBackBtn) modalBackBtn.hidden = !modalBackFn;
+    modalEl.hidden = false;
+    const card = modalEl.querySelector(".modal-card"); if (card) card.scrollTop = 0;   // 새 화면은 늘 맨 위부터
+    pushModalState();
+  }
+  function closeModal() {
+    stopHistAudio(); modalEl.hidden = true; modalBody.innerHTML = "";
+    modalBackFn = null; if (modalBackBtn) modalBackBtn.hidden = true;
+    if (modalNav) { modalNav = false; modalSelfBack = true; try { history.back(); } catch (e) { modalSelfBack = false; } }
+  }
+  function modalGoBack() { const f = modalBackFn; if (f) { modalBackFn = null; f(); } else closeModal(); }
 
   /* "이 폰은 누구 폰인가요?" — 녹음하러 처음 들어갈 때 한 번만 묻는다.
    * 더보기에서 언제든 바꿀 수 있다. */
@@ -1147,7 +1176,7 @@
     }));
   }
 
-  function openName() {
+  function openName(back) {
     const name = getBabyName();
     openModal(`
       <div class="modal-body">
@@ -1157,9 +1186,10 @@
         <label class="field-label" for="nameInput">아기 이름</label>
         <input class="text-input" id="nameInput" type="text" maxlength="12" placeholder="예: 지우" value="${escapeHtml(name)}" />
         <p class="hint">※ 이름을 바꾼 뒤엔, 이미 한 녹음은 예전 이름으로 들려요. 새 이름으로 다시 녹음하는 걸 권해요.</p>
+        <p class="hint">💡 홈 화면 <b>제목 위 이름</b>(또는 “아기 이름 정하기”)을 눌러도 바로 바꿀 수 있어요.</p>
         <button class="modal-btn gold" id="nameSave" type="button">저장</button>
         ${name ? '<button class="modal-btn ghost" id="nameClear" type="button">이름 지우기</button>' : ""}
-      </div>`);
+      </div>`, back);
     const input = $("nameInput"); input.focus();
     $("nameSave").addEventListener("click", () => {
       const v = input.value.trim();
@@ -1173,23 +1203,100 @@
     });
   }
 
-  /* ---------- 더보기: 백업 · 사용법 · 의견을 한 창에 (쭉 스크롤) ---------- */
-  function openMore() {
+  /* ---------- 더보기: 메뉴판 → 상세 (한 화면에 한 가지만) ----------
+   * 예전엔 백업·사용법·의견이 한 창에 쭉 이어져 있어서, 백업 하나 하려 해도
+   * 사용법 전체를 스크롤로 지나가야 했다("더보기 내용이 너무 많고 길다" 제보 → v37).
+   * 이제 더보기를 열면 짧은 목록만 뜨고, 누른 것만 한 화면 가득 보여준다.
+   * 목록에는 지금 값("지금: 엄마 폰")을 같이 적어, 확인만 하려는 사람은 들어갈 필요가 없게 했다.
+   * openMore("backup") 처럼 부르면 목록을 건너뛰고 바로 그 화면으로 간다(지름길). */
+
+  function moreRow(key, icon, title, sub, cls) {
+    return `<li><button class="mrow ${cls || ""}" type="button" data-more="${key}">
+        <span class="mi" aria-hidden="true">${icon}</span>
+        <span class="mt">${title}${sub ? `<small>${sub}</small>` : ""}</span>
+        <span class="mc" aria-hidden="true">›</span>
+      </button></li>`;
+  }
+  // 상세 화면 맨 아래 "다음은 이거 보세요" 한 줄 (사용법을 셋으로 쪼개도 흐름이 이어지게)
+  function moreNext(key, label) {
+    return `<button class="mnext" type="button" data-more="${key}">${label} ›</button>`;
+  }
+
+  function openMore(page) {
+    if (page && MORE_PAGES[page]) return openMorePage(page);
+    const voice = getMyVoice(), name = getBabyName();
     openModal(`
       <div class="modal-body">
         <h2>더보기 ⚙️</h2>
+        <ul class="more-menu">
+          ${moreRow("howRec", "👋", "처음이세요?", "녹음부터 들려주기까지 차근차근", "first")}
+        </ul>
+        <ul class="more-menu">
+          ${moreRow("who", "🎤", "이 폰은 누구 폰", voice ? `지금: ${VOICE_LABEL[voice]} 폰` : "아직 안 정했어요")}
+          ${moreRow("name", "👶", "아기 이름", name ? `지금: ${escapeHtml(name)}` : "아직 안 넣었어요")}
+        </ul>
+        <ul class="more-menu">
+          ${moreRow("backup", "🛟", "녹음 백업하기", "카톡 ‘나에게’로 저장해 두기")}
+          ${moreRow("restore", "📥", "백업에서 복원하기", "엄마·아빠 녹음 합치기")}
+        </ul>
+        <ul class="more-menu">
+          ${moreRow("howRec", "🎙️", "녹음하는 법")}
+          ${moreRow("howPlay", "🌙", "들려주는 법")}
+          ${moreRow("install", "📲", "홈 화면에 앱으로 넣기")}
+        </ul>
+        <ul class="more-menu">
+          ${moreRow("feedback", "💬", "의견 보내기", "불편한 점·바라는 점 알려주기")}
+        </ul>
+        <p class="hint" style="text-align:center;margin-top:20px;">🔒 녹음은 이 기기 안에만 저장돼요 · 서버에 올라가지 않아요<br/>별밤책 ${APP_VERSION}</p>
+      </div>`);
+    wireMoreLinks();
+  }
 
-        <h3 class="more-sec">🎤 이 폰은 누구 폰</h3>
+  // 목록·상세 어디에 있든 [data-more] 는 그 화면으로 데려간다
+  function wireMoreLinks() {
+    modalBody.querySelectorAll("[data-more]").forEach((b) =>
+      b.addEventListener("click", () => openMorePage(b.dataset.more)));
+  }
+
+  function openMorePage(key) {
+    const pg = MORE_PAGES[key];
+    if (!pg) return openMore();
+    if (pg.open) return pg.open();                       // 화면을 통째로 따로 쓰는 것(예: 아기 이름)
+    openModal(`<div class="modal-body">${pg.body()}</div>`, openMore);   // 두 번째 인자 = ‹ 더보기
+    wireMoreLinks();
+    if (pg.wire) pg.wire();
+  }
+
+  /* 더보기 안의 화면들. body() = 보여줄 글, wire() = 버튼 연결 */
+  const MORE_PAGES = {
+    /* 🎤 이 폰은 누구 폰 */
+    who: {
+      body: () => `
+        <h2>이 폰은 누구 폰? 🎤</h2>
         <p>여기서 새로 녹음하면 <b>${getMyVoice() ? VOICE_LABEL[getMyVoice()] : "아직 안 정함"}</b> 목소리로 담겨요.
         엄마·아빠가 각자 폰에 정해 두면, 백업을 주고받아도 <b>서로 덮어쓰지 않아요.</b></p>
         <div class="who">
           <button class="who-b ${getMyVoice() === "mom" ? "on" : ""}" type="button" data-mv="mom">👩 엄마 폰</button>
           <button class="who-b ${getMyVoice() === "dad" ? "on" : ""}" type="button" data-mv="dad">👨 아빠 폰</button>
         </div>
+        <p class="hint">※ 이야기마다 따로 고르는 것도 그대로 돼요(녹음 화면 위 👩/👨).</p>`,
+      wire: () => {
+        modalBody.querySelectorAll("[data-mv]").forEach((b) => b.addEventListener("click", () => {
+          setMyVoice(b.dataset.mv);
+          modalBody.querySelectorAll("[data-mv]").forEach((x) => x.classList.toggle("on", x === b));
+          const p = modalBody.querySelector("p"); if (p) p.innerHTML = p.innerHTML.replace(/<b>.*?<\/b>/, `<b>${VOICE_LABEL[b.dataset.mv]}</b>`);
+          toast(`이 폰은 ${VOICE_LABEL[b.dataset.mv]} 폰이에요 🎤`);
+        }));
+      },
+    },
 
-        <hr class="more-hr" />
+    /* 👶 아기 이름 — 홈에서도 쓰는 화면이라 그대로 부른다(뒤로는 더보기로) */
+    name: { open: () => openName(openMore) },
 
-        <h3 class="more-sec">🛟 녹음 백업 · 복원</h3>
+    /* 🛟 백업하기 */
+    backup: {
+      body: () => `
+        <h2>녹음 백업하기 🛟</h2>
         <p>녹음은 이 기기 안에만 있어요. <b>카카오톡 ‘나에게 보내기’</b>로 백업해 두면,
         폰을 바꾸거나 실수로 지워져도 카톡에서 다시 <b>복원</b>할 수 있어요.</p>
         <button class="modal-btn gold" id="doBackup" type="button">💬 카카오톡으로 백업 보내기</button>
@@ -1200,38 +1307,66 @@
           <li>위 버튼을 누르면 <b>공유창</b>이 떠요</li>
           <li><b>카카오톡</b> 선택 → <b>나에게 보내기</b>(내 채팅방)에 저장</li>
         </ol>
-        <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.
-        복원은 <b>합치기</b>라서 내 녹음은 지워지지 않고, <b>더 새로 녹음한 쪽이 남아요.</b></p>
+        <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.</p>
+        <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 백업이 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.
+        백업은 사진첩이 아니라 <b>파일</b>로 저장돼요.</p>
+        ${moreNext("restore", "📥 받은 백업 파일을 합치려면")}`,
+      wire: () => {
+        $("bkHist").addEventListener("change", (e) => { backupWithHistory = e.target.checked; buildBackup(); });
+        $("doBackup").addEventListener("click", sendBackup);
+        buildBackup();   // 이 화면에 들어올 때만 준비 → 더보기 여는 건 가벼워진다
+      },
+    },
 
-        <h3>📥 복원하기 (백업에서 되살리기)</h3>
+    /* 📥 복원하기 */
+    restore: {
+      body: () => `
+        <h2>백업에서 복원하기 📥</h2>
+        <p>백업해 둔 <b>별밤책-백업.txt</b> 파일을 고르면 녹음이 되살아나요.
+        복원은 <b>합치기</b>라서 <b>내 녹음은 지워지지 않고</b>, 같은 자리는 <b>더 새로 녹음한 쪽이 남아요.</b></p>
         <ol class="steps">
           <li>카톡 <b>나에게</b>에서 <b>별밤책-백업.txt</b>를 눌러 → <b>공유 → “파일에 저장”</b></li>
           <li>아래 버튼을 누르고, 방금 저장한 <b>별밤책-백업.txt</b>를 고르기</li>
         </ol>
-        <button class="modal-btn ghost" id="doRestore" type="button">📥 백업 파일에서 복원</button>
-        <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 백업이 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.
-        백업은 사진첩이 아니라 <b>파일</b>로 저장돼요.</p>
+        <button class="modal-btn ghost" id="doRestore" type="button">📥 백업 파일 고르기</button>
+        <p class="hint">💡 엄마·아빠가 <b>서로의 백업 파일</b>을 복원하면, 두 사람 목소리가 <b>한 폰에</b> 나란히 모여요.</p>
+        <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 잘 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.</p>
+        ${moreNext("backup", "🛟 내 녹음을 백업하려면")}`,
+      wire: () => { $("doRestore").addEventListener("click", () => restoreInput.click()); },
+    },
 
-        <hr class="more-hr" />
-
-        <h3 class="more-sec">❔ 사용법</h3>
-        <h3>🎙️ 녹음하기</h3>
+    /* 🎙️ 녹음하는 법 */
+    howRec: {
+      body: () => `
+        <h2>녹음하는 법 🎙️</h2>
         <p>홈 <b>맨 아래 🎙 녹음하기</b>를 누르면 이야기 목록이 나와요. 이야기를 고르고,
         장면마다 <b>🔴</b> 를 눌러 읽고 다 읽으면 <b>■ 멈춤</b>. <b>🔊 녹음 확인</b>으로 들어볼 수 있어요.</p>
-        <p class="hint">🎤 <b>좋은 소리로 담는 요령:</b> 조용한 방에서, 마이크(폰 아래쪽)를 <b>한 뼘쯤</b> 떨어뜨리고
-        평소 말하듯 읽어주세요. 너무 가까우면 "퍽퍽" 소리가, 손이 마이크를 스치면 "지지직" 소리가 섞여요.</p>
-        <h3>🌙 들려주기</h3>
+        <h3>🎤 좋은 소리로 담는 요령</h3>
+        <p>조용한 방에서, 마이크(폰 아래쪽)를 <b>한 뼘쯤</b> 떨어뜨리고 평소 말하듯 읽어주세요.
+        너무 가까우면 "퍽퍽" 소리가, 손이 마이크를 스치면 "지지직" 소리가 섞여요.</p>
+        <p class="hint">아기 화면에는 녹음으로 가는 길이 없어요(아기가 실수로 지울 일 없게).</p>
+        ${moreNext("howPlay", "🌙 다음: 들려주는 법")}`,
+    },
+
+    /* 🌙 들려주는 법 */
+    howPlay: {
+      body: () => `
+        <h2>들려주는 법 🌙</h2>
         <p>홈에서 <b>또렷한 그림 카드</b>를 누르면 바로 들려줘요. 목소리에 맞춰 그림도 함께 넘어가요.
         <b>한 편이 끝나면 다른 이야기가 저절로 이어져요.</b> 화면을 누르면 잠깐 멈추고, 다시 누르면 이어서 들려줘요.</p>
         <p><b>🌙 쭉 들려주기</b>를 누르면 고르지 않아도 아무 이야기부터 계속 이어서 들려줘요. 재울 때 편해요.</p>
-        <p>🔒 <b>화면을 꺼도 소리는 계속 나와요.</b> 잠금화면에 이야기 제목과 ⏯️ 버튼이 떠서 거기서 멈추거나 넘길 수 있어요.
+        <h3>🔒 화면을 꺼도 계속 들려요</h3>
+        <p>잠금화면에 이야기 제목과 ⏯️ 버튼이 떠서 거기서 멈추거나 넘길 수 있어요.
         (폰·브라우저에 따라 다를 수 있어요)</p>
-        <p class="hint">아직 녹음 안 한 이야기는 <b>흐릿하게</b> 보여요. 자리는 그대로라서 아기가 외운 위치가 안 바뀌어요.
-        아기 화면에는 녹음으로 가는 길이 없어요(실수로 지울 일 없게).</p>
-        <h3>👶 아기 이름 넣기</h3>
-        <p>홈 화면 <b>제목 위 이름</b>(또는 “아기 이름 정하기”)을 누르면 바꿀 수 있어요.
-        대본 속 <b>(아기 이름)</b> 자리에 쏙 들어가요.</p>
-        <h3>📲 홈 화면에 추가하기 (앱처럼 쓰기)</h3>
+        <p class="hint">아직 녹음 안 한 이야기는 <b>흐릿하게</b> 보여요. 자리는 그대로라서 아기가 외운 위치가 안 바뀌어요.</p>
+        ${moreNext("install", "📲 다음: 홈 화면에 앱으로 넣기")}`,
+    },
+
+    /* 📲 홈 화면에 추가 */
+    install: {
+      body: () => `
+        <h2>홈 화면에 앱으로 넣기 📲</h2>
+        <p>홈 화면에 넣어 두면 <b>앱처럼</b> 바로 열리고, 인터넷이 없어도 들려줄 수 있어요.</p>
         <ul>
           <li><b>아이폰</b>: 꼭 <b>사파리(Safari)</b>에서 → 아래 <b>공유(⬆️)</b> → <b>"홈 화면에 추가"</b></li>
           <li><b>안드로이드</b>: <b>크롬</b>에서 → <b>⋮ 메뉴</b> → <b>"홈 화면에 추가"</b></li>
@@ -1239,32 +1374,23 @@
         <p><b>카카오톡·인스타 등으로 링크를 열었다면</b>, 먼저 <b>사파리·크롬으로 열어주세요.</b><br/>
         (화면 <b>오른쪽 메뉴(⋯)</b> → <b>"다른 브라우저로 열기 / Safari로 열기"</b>)</p>
         <p class="hint">녹음은 <b>연 브라우저마다 따로 저장</b>되니, 처음부터 사파리·크롬으로 여는 게 안전해요.</p>
+        ${moreNext("howRec", "🎙️ 처음이라면: 녹음하는 법")}`,
+    },
 
-        <hr class="more-hr" />
-
-        <h3 class="more-sec">💬 의견 보내기</h3>
+    /* 💬 의견 보내기 */
+    feedback: {
+      body: () => `
+        <h2>의견 보내기 💬</h2>
         <p>불편한 점, 바라는 점, 응원 모두 좋아요. 만든 사람에게 전해져요.</p>
         <label class="field-label" for="fbMsg">내용</label>
         <textarea class="text-area" id="fbMsg" placeholder="자유롭게 적어주세요"></textarea>
         <label class="field-label" for="fbEmail">답장 받을 이메일 (선택)</label>
         <input class="text-input" id="fbEmail" type="email" placeholder="선택 사항이에요" />
         <button class="modal-btn" id="fbSend" type="button">보내기</button>
-        <p class="hint">보낸 내용은 만든 사람에게만 전달돼요.</p>
-
-        <hr class="more-hr" />
-        <p class="hint" style="text-align:center;">🔒 녹음은 이 기기 안에만 저장돼요 · 서버에 올라가지 않아요<br/>별밤책 ${APP_VERSION}</p>
-      </div>`);
-    modalBody.querySelectorAll("[data-mv]").forEach((b) => b.addEventListener("click", () => {
-      setMyVoice(b.dataset.mv);
-      modalBody.querySelectorAll("[data-mv]").forEach((x) => x.classList.toggle("on", x === b));
-      toast(`이 폰은 ${VOICE_LABEL[b.dataset.mv]} 폰이에요 🎤`);
-    }));
-    $("bkHist").addEventListener("change", (e) => { backupWithHistory = e.target.checked; buildBackup(); });
-    $("doBackup").addEventListener("click", sendBackup);
-    $("doRestore").addEventListener("click", () => restoreInput.click());
-    $("fbSend").addEventListener("click", sendFeedback);
-    buildBackup();   // 모달 열자마자 파일 준비 → 버튼 누르는 즉시 공유창이 뜨게
-  }
+        <p class="hint">보낸 내용은 만든 사람에게만 전달돼요.</p>`,
+      wire: () => { $("fbSend").addEventListener("click", sendFeedback); },
+    },
+  };
 
   /* 의견 보내기 (더보기 모달 안 폼 → 구글 폼, 없으면 Netlify Forms)
    * 어떤 화면·어떤 버전에서 온 의견인지 알면 고치기 쉬워서, 내용 끝에 짧은 꼬리표를 붙인다.
@@ -1453,7 +1579,17 @@
   document.querySelectorAll(".vtab").forEach((t) => t.addEventListener("click", () => setVoice(t.dataset.voice)));
   $("playHome").addEventListener("click", (e) => { e.stopPropagation(); showHome(); });
   $("modalClose").addEventListener("click", closeModal);
+  modalBackBtn.addEventListener("click", modalGoBack);
   modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
+  /* 안드로이드 뒤로가기(아이폰 쓸어넘기기): 모달이 열려 있으면 앱을 닫지 말고 한 칸만 뒤로 */
+  window.addEventListener("popstate", () => {
+    if (modalSelfBack) { modalSelfBack = false; return; }   // 우리가 ✕ 로 닫으며 스스로 뒤로 간 것
+    if (modalEl.hidden) return;                             // 모달이 없으면 브라우저에 맡긴다
+    modalNav = false;                                       // 방금 우리 칸이 사라졌다
+    modalGoBack();                                          // 상세 → 목록 / 목록 → 닫기
+  });
+  /* 홈 아래 "아직 백업 전이에요" 띠 → 목록을 건너뛰고 백업 화면으로 (지름길) */
+  footNote.addEventListener("click", () => { if (footNote.classList.contains("warn")) openMore("backup"); });
   restoreInput.addEventListener("change", (e) => { restoreFromFile(e.target.files[0]); e.target.value = ""; });
   document.addEventListener("keydown", (e) => {
     if (!recEl.classList.contains("active") || rec.recording) return;
