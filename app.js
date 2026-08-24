@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v37";
+  const APP_VERSION = "v40";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -1247,7 +1247,7 @@
         <ul class="more-menu">
           ${moreRow("feedback", "💬", "의견 보내기", "불편한 점·바라는 점 알려주기")}
         </ul>
-        <p class="hint" style="text-align:center;margin-top:20px;">🔒 녹음은 이 기기 안에만 저장돼요 · 서버에 올라가지 않아요<br/>별밤책 ${APP_VERSION}</p>
+        <p class="hint privacy-foot"><span>🔒 녹음은 이 기기 안에만 저장되어</span><span>서버에 올라가지 않아요</span><span class="ver">별밤책 ${APP_VERSION}</span></p>
       </div>`);
     wireMoreLinks();
   }
