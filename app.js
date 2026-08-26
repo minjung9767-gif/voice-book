@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v41";
+  const APP_VERSION = "v42";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -121,6 +121,7 @@
     done: new Set(),               // 이 이야기·이 목소리에서 녹음된 장면 번호
     hasLegacy: false,              // 예전(통) 녹음이 남아 있는지
     recorder: null, chunks: [], stream: null, recording: false,
+    boost: null,                   // 앱이 소리를 키워서 담는 쪽 (되는 폰에서만)
     preview: null, previewOn: false,
     histMap: {},                   // { 장면번호: 지난 녹음 개수 }
   };
@@ -295,6 +296,46 @@
     finally { try { ctx && ctx.close(); } catch (e) {} }
   }
   function withTimeout(p, ms) { return Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))]); }
+
+  /* ===== 앱이 직접 소리를 키우는 길 =====
+   * 아이폰은 '에코 제거'를 끄면 마이크가 통째로 '손대지 않는 모드'로 바뀌면서
+   * autoGainControl(자동 볼륨)을 켜 달라고 해도 무시한다 → 녹음이 작게 담긴다(민정 제보, v42).
+   * 그래서 폰에게 맡기지 않고 우리가 키운다. 소리를 4배로 키우되(gain),
+   * 너무 커진 부분은 리미터가 눌러 준다(compressor) → 찢어지지 않으면서 크기가 붙는다.
+   *
+   * ⚠️ 이 길은 '덤'이다. 원래 방식(raw)으로도 동시에 담아서, 녹음이 끝난 뒤
+   *    둘을 재 보고 제대로 담긴 쪽을 고른다. 옛 아이폰 사파리에는 이 길로 녹음하면
+   *    소리가 통째로 안 담기는 버그가 있었기 때문 → 그런 폰에서도 절대 손해 보지 않는다. */
+  const BOOST_GAIN = 6;            // 6배 (약 +15dB)
+  function buildBoostedStream(stream) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    let ac = null;
+    try {
+      ac = new AC();
+      if (!ac.createMediaStreamDestination) { ac.close(); return null; }
+      if (ac.state === "suspended") { try { ac.resume(); } catch (e) {} }
+      const src = ac.createMediaStreamSource(stream);
+      const gain = ac.createGain(); gain.gain.value = BOOST_GAIN;
+      const lim = ac.createDynamicsCompressor();      // 리미터 — 커진 소리가 찢어지지 않게 눌러 준다
+      lim.threshold.value = -6; lim.knee.value = 0; lim.ratio.value = 12;
+      lim.attack.value = 0.003; lim.release.value = 0.2;
+      const dest = ac.createMediaStreamDestination();
+      src.connect(gain); gain.connect(lim); lim.connect(dest);
+      return { stream: dest.stream, close() { try { src.disconnect(); gain.disconnect(); lim.disconnect(); ac.close(); } catch (e) {} } };
+    } catch (e) { try { ac && ac.close(); } catch (e2) {} return null; }
+  }
+  function makeBoostRecorder(stream, opts) {
+    const node = buildBoostedStream(stream);
+    if (!node) return null;
+    let recorder = null;
+    try { recorder = new MediaRecorder(node.stream, opts); }
+    catch (e) { try { recorder = new MediaRecorder(node.stream); } catch (e2) { node.close(); return null; } }
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const done = new Promise((res) => { recorder.onstop = () => res(true); recorder.onerror = () => res(true); });
+    return { recorder, chunks, node, done };
+  }
 
   function pickMime() {
     const cand = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", "audio/ogg;codecs=opus"];
@@ -582,6 +623,10 @@
      *   - 자동 볼륨(AGC)     → 작게 들어온 소리를 키워 준다 → 켠다.
      * ⚠️ v24 에서 셋을 다 껐더니 녹음이 현저히 작게 담겼다(민정 제보, v41 에서 되돌림).
      *    자동 볼륨은 '음질을 깎는 처리'가 아니라 '크기를 맞춰 주는 처리'라 켜 두어야 한다.
+     * ⚠️ 그런데 v41 뒤에도 여전히 작았다(민정 제보). 아이폰은 '에코 제거'를 끄면 마이크가 통째로
+     *    '손대지 않는 모드'로 바뀌어서 이 autoGainControl 요청을 무시한다 → 폰에 맡길 수 없다.
+     *    그래서 v42 부터는 앱이 직접 키운다(makeBoostRecorder). 이 줄은 켜 두는 게 맞지만,
+     *    이것만 믿으면 안 된다.
      * (소음 억제는 계속 꺼 두므로 방 소음은 그대로 들어온다 → 조용한 곳에서 녹음하는 게 좋다) */
     try {
       rec.stream = await navigator.mediaDevices.getUserMedia({
@@ -602,15 +647,49 @@
     rec.chunks = [];
     rec.recorder.ondataavailable = (e) => { if (e.data && e.data.size) rec.chunks.push(e.data); };
     rec.recorder.onstop = onRecorderStop;
-    rec.recorder.start(); rec.recording = true;
+    rec.boost = makeBoostRecorder(rec.stream, opts);      // 앱이 키운 소리 — 안 되는 폰이면 null
+    rec.recorder.start();
+    if (rec.boost) {
+      try { rec.boost.recorder.start(); }
+      catch (e) { rec.boost.node.close(); rec.boost = null; }
+    }
+    rec.recording = true;
     renderRecTop(); renderRecBottom();
   }
-  function stopRecording() { if (rec.recorder && rec.recorder.state !== "inactive") rec.recorder.stop(); }
+  function stopRecording() {
+    if (rec.boost && rec.boost.recorder.state !== "inactive") { try { rec.boost.recorder.stop(); } catch (e) {} }
+    if (rec.recorder && rec.recorder.state !== "inactive") rec.recorder.stop();
+  }
   async function onRecorderStop() {
-    const mime = (rec.recorder && rec.recorder.mimeType) || pickMime() || "audio/webm";
-    const blob = new Blob(rec.chunks, { type: mime });
+    const rawMime = (rec.recorder && rec.recorder.mimeType) || pickMime() || "audio/webm";
+    const rawBlob = new Blob(rec.chunks, { type: rawMime });
+
+    /* 앱이 키운 소리도 같이 담았으면 꺼내 둔다 (멈추는 데 잠깐 걸릴 수 있어 기다려 준다) */
+    const boost = rec.boost; rec.boost = null;
+    let boostBlob = null, boostMime = rawMime;
+    if (boost) {
+      try { boost.recorder.stop(); } catch (e) {}
+      await withTimeout(boost.done, 1500);
+      boostMime = boost.recorder.mimeType || rawMime;
+      boostBlob = new Blob(boost.chunks, { type: boostMime });
+      boost.node.close();
+    }
     releaseStream(); rec.recorder = null; rec.recording = false;
+    if (!rawBlob.size && !(boostBlob && boostBlob.size)) { toast("녹음이 비어 있어요. 다시 해볼까요?"); renderRec(false); return; }
+
+    /* 둘 다 소리 크기를 재고 고른다.
+     * 키운 쪽이 '제대로 담겼고(무음이 아니고) 더 크면' 그쪽을, 아니면 원래 것을 저장한다.
+     * → 키우는 길이 안 되는 폰에서도 예전과 똑같이 동작할 뿐, 손해는 없다. */
+    const rawPeak = await withTimeout(measurePeak(rawBlob), 2500);
+    let blob = rawBlob, mime = rawMime, peak = rawPeak, picked = "raw";
+    if (boostBlob && boostBlob.size) {
+      const bPeak = await withTimeout(measurePeak(boostBlob), 2500);
+      if (bPeak !== null && bPeak > SILENT_PEAK && (rawPeak === null || bPeak > rawPeak)) {
+        blob = boostBlob; mime = boostMime; peak = bPeak; picked = "boost";
+      }
+    }
     if (!blob.size) { toast("녹음이 비어 있어요. 다시 해볼까요?"); renderRec(false); return; }
+    track("record_" + picked);
     const key = sceneKey(rec.story.id, rec.voice, rec.scene);
     try {
       await pushHistory(key);                        // 예전 녹음을 '지난 녹음'으로 옮겨 둔다 (안 지운다)
@@ -620,7 +699,6 @@
     } catch (e) { toast("저장에 실패했어요 (저장 공간을 확인해 주세요)"); renderRec(false); return; }
     /* 소리가 작게 들어갔으면 알려주고 '그 장면에 그대로' 머문다 → 바로 다시 녹음할 수 있다.
      * (녹음은 이미 저장돼 있으니, 그냥 넘어가고 싶으면 ❯ 로 넘어가면 된다) */
-    const peak = await withTimeout(measurePeak(blob), 2500);
     if (peak !== null && peak < QUIET_PEAK) {
       track("record_quiet");
       toast(peak < SILENT_PEAK
