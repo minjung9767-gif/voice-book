@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v40";
+  const APP_VERSION = "v41";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -266,6 +266,36 @@
   let toastTimer = null;
   function toast(msg) { toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2600); }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  /* ===== 녹음이 너무 작게 들어갔는지 확인 =====
+   * 담긴 소리에서 '제일 큰 순간'(peak, 0~1)을 재 본다.
+   * 자장가처럼 소곤소곤 읽어도 보통 0.15 는 넘는다. 그보다 훨씬 작으면
+   * 마이크가 멀었거나(또는 손으로 막았거나) 소리가 거의 안 담긴 것이다.
+   * 재는 데 실패하면(브라우저가 이 형식을 못 열면) 그냥 아무 말도 안 한다 — 녹음은 이미 저장돼 있다. */
+  const QUIET_PEAK = 0.08;      // 이보다 작으면 "작게 들어갔어요"
+  const SILENT_PEAK = 0.012;    // 이보다 작으면 "거의 안 들어갔어요"
+  async function measurePeak(blob) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || !blob || !blob.size) return null;
+    let ctx = null;
+    try {
+      const buf = await blob.arrayBuffer();
+      ctx = new AC();
+      const audio = await new Promise((res, rej) => {
+        const p = ctx.decodeAudioData(buf, res, rej);          // 옛 사파리는 콜백만 받는다
+        if (p && p.then) p.then(res, rej);
+      });
+      let peak = 0;
+      for (let c = 0; c < audio.numberOfChannels; c++) {
+        const d = audio.getChannelData(c);
+        const step = Math.max(1, Math.floor(d.length / 120000));   // 길면 듬성듬성 (폰이 버벅이지 않게)
+        for (let i = 0; i < d.length; i += step) { const v = Math.abs(d[i]); if (v > peak) peak = v; }
+      }
+      return peak;
+    } catch (e) { return null; }
+    finally { try { ctx && ctx.close(); } catch (e) {} }
+  }
+  function withTimeout(p, ms) { return Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))]); }
+
   function pickMime() {
     const cand = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", "audio/ogg;codecs=opus"];
     if (window.MediaRecorder && MediaRecorder.isTypeSupported) { for (const t of cand) if (MediaRecorder.isTypeSupported(t)) return t; }
@@ -547,12 +577,15 @@
   async function startRecording() {
     stopPreview();
     if (!navigator.mediaDevices || !window.MediaRecorder) { toast("이 브라우저는 녹음을 지원하지 않아요"); return; }
-    /* 폰 브라우저는 마이크를 켤 때 기본으로 '통화용 처리'(에코 제거·소음 억제·자동 볼륨)를 건다.
-     * 그게 목소리를 실시간으로 깎고 붙여서 지지직거리거나 물속 소리처럼 만든다 → 모두 끈다.
-     * (대신 방 소음이 그대로 들어오므로 조용한 곳에서 녹음하는 게 좋다) */
+    /* 폰 브라우저는 마이크를 켤 때 기본으로 '통화용 처리' 세 가지를 건다.
+     *   - 에코 제거 · 소음 억제 → 목소리를 실시간으로 깎고 붙여서 지지직·물속 소리를 만든다 → 끈다.
+     *   - 자동 볼륨(AGC)     → 작게 들어온 소리를 키워 준다 → 켠다.
+     * ⚠️ v24 에서 셋을 다 껐더니 녹음이 현저히 작게 담겼다(민정 제보, v41 에서 되돌림).
+     *    자동 볼륨은 '음질을 깎는 처리'가 아니라 '크기를 맞춰 주는 처리'라 켜 두어야 한다.
+     * (소음 억제는 계속 꺼 두므로 방 소음은 그대로 들어온다 → 조용한 곳에서 녹음하는 게 좋다) */
     try {
       rec.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, channelCount: 1 },
       });
     } catch (e) {
       try { rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }   // 위 설정을 못 받는 기기 대비
@@ -585,6 +618,17 @@
       rec.done.add(rec.scene); track("record_save");
       await loadHistMap();
     } catch (e) { toast("저장에 실패했어요 (저장 공간을 확인해 주세요)"); renderRec(false); return; }
+    /* 소리가 작게 들어갔으면 알려주고 '그 장면에 그대로' 머문다 → 바로 다시 녹음할 수 있다.
+     * (녹음은 이미 저장돼 있으니, 그냥 넘어가고 싶으면 ❯ 로 넘어가면 된다) */
+    const peak = await withTimeout(measurePeak(blob), 2500);
+    if (peak !== null && peak < QUIET_PEAK) {
+      track("record_quiet");
+      toast(peak < SILENT_PEAK
+        ? "소리가 거의 안 들어갔어요 🎤 마이크를 막지 않았는지 보고 다시 해볼까요?"
+        : "소리가 작게 들어갔어요 🎤 조금 더 가까이서 다시 해볼까요?");
+      renderRec(true); return;
+    }
+
     const N = sceneCount(rec.story);
     if (rec.done.size >= N) { toast("이 이야기를 다 녹음했어요 🎉  백업도 잊지 마세요!"); renderRec(true); return; }
     /* 다음 장면으로 — 반드시 '순서대로' 넘어간다.
