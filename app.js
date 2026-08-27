@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v43";
+  const APP_VERSION = "v44";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -1050,7 +1050,11 @@
       return;
     }
     const mb = backupReady.bytes ? " · 약 " + Math.max(1, Math.round(backupReady.bytes / 1048576)) + "MB" : "";
-    h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음을 보낼 수 있어요" + mb + ".";
+    /* 파일이 크면 폰이 카톡 공유창을 못 띄우는 일이 있다 → 미리 '파일로 저장하기'를 권한다 */
+    const big = backupReady.bytes > 20 * 1048576
+      ? "<br><b>파일이 커요.</b> 카톡 공유가 막히면 아래 <b>📁 파일로 저장하기</b> 를 쓰세요."
+      : "";
+    h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음을 보낼 수 있어요" + mb + "." + big;
   }
   // 카톡/메일/드라이브 등으로 보내기. 공유창을 버튼 클릭 '즉시' 띄운다(중간 await 없음).
   async function sendBackup() {
@@ -1061,16 +1065,24 @@
      * 카카오톡 같은 앱이 **글만 받고 파일을 버리는** 일이 있다.
      * (실제로 "공유는 눌렀는데 파일이 첨부가 안 됐다"는 제보를 받아 고쳤다 — v33)
      * 절대 files 와 text 를 함께 보내도록 되돌리지 말 것. */
+    /* 공유창이 안 뜨면 '왜' 인지를 붙잡아 둔다.
+     * 예전엔 이유를 안 보여줘서, 제보를 받아도 원인을 알 수가 없었다(v44). */
+    let why = "";
     try {
-      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (!file) { why = "이 브라우저가 파일 공유를 지원하지 않아요"; }
+      else if (navigator.canShare && !navigator.canShare({ files: [file] })) { why = "이 브라우저가 이 파일(" + file.type + ")을 공유하지 못해요"; }
+      else if (!navigator.share) { why = "이 브라우저에 공유 기능이 없어요"; }
+      else {
         await navigator.share({ files: [file] });
         markBackedUp();
         toast(count + "개 백업을 보냈어요 🛟  (카톡 ‘나에게’ 추천)"); track("backup"); return;
       }
     } catch (e) {
       if (e && e.name === "AbortError") return;   // 사용자가 취소
+      why = ((e && e.name) || "알 수 없는 오류") + ((e && e.message) ? " · " + e.message : "");
+      if (backupReady && backupReady.bytes > 20 * 1048576) why += " (파일이 " + Math.round(backupReady.bytes / 1048576) + "MB 로 커서일 수 있어요)";
     }
-    backupFallback(blob);
+    backupFallback(blob, why);
   }
 
   /* 공유창을 거치지 않고 곧장 파일로 저장한다.
@@ -1087,7 +1099,7 @@
   /* 공유창이 안 뜨거나 파일 공유를 못 하는 환경.
    * 예전엔 파일만 슬쩍 저장하고 작은 안내만 띄워서, 사용자는 "아무 일도 안 일어났다"고 느꼈다.
    * 무슨 일이 있었는지와 다음에 뭘 하면 되는지를 분명히 보여준다. */
-  function backupFallback(blob) {
+  function backupFallback(blob, why) {
     const iab = isInAppBrowser();
     if (!iab) downloadBlob(blob, (backupReady && backupReady.name) || BACKUP_TYPES[0].name);   // 인앱 브라우저는 저장도 잘 안 된다
     markBackedUp(); track("backup_fallback");
@@ -1103,15 +1115,16 @@
                <li><span><b>“다른 브라우저로 열기 / Safari로 열기”</b> 를 고르세요</span></li>
                <li><span>거기서 <b>⚙️ 더보기 → 백업</b> 을 다시 눌러주세요</span></li>
              </ol>`
-          : `<p>이 브라우저는 카톡으로 <b>바로 보내기</b>를 지원하지 않아서,
-             <b>별밤책-백업</b> 파일로 저장했어요.</p>
+          : `<p>카톡 공유창이 뜨지 않아서 <b>별밤책-백업</b> 파일로 저장했어요.
+             <b>백업은 제대로 됐어요</b> — 아래대로 카톡에 붙여만 주시면 돼요.</p>
              <p><b>카톡으로 보내려면:</b></p>
              <ol class="steps-big">
                <li><span>카톡에서 <b>‘나에게’ 채팅방</b>을 여세요</span></li>
                <li><span><b>+ 버튼 → 파일</b> 을 고르세요</span></li>
                <li><span>방금 저장한 <b>별밤책-백업</b> 파일을 고르면 끝!</span></li>
              </ol>
-             <p class="hint">📁 파일은 <b>“파일” 앱</b>(안드로이드는 <b>다운로드</b> 폴더)에 있어요.</p>`}
+             <p class="hint">📁 파일은 <b>“파일” 앱</b>(안드로이드는 <b>다운로드</b> 폴더)에 있어요.</p>
+             ${why ? `<p class="hint why">🔎 공유창이 안 뜬 이유: ${escapeHtml(why)}</p>` : ""}`}
         <button class="modal-btn gold" id="bfOk" type="button">알겠어요</button>
       </div>`);
     const ok = $("bfOk"); if (ok) ok.addEventListener("click", closeModal);
