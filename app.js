@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v42";
+  const APP_VERSION = "v43";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -1001,6 +1001,27 @@
    * 다 담으면 파일이 몇 배로 커져서, 아이폰이 백업 파일을 만들다 버거워질 수 있다.
    * 폰을 바꾸기 전처럼 통째로 옮겨야 할 때만 켠다. */
   let backupWithHistory = false;
+  /* 🚨 백업 파일의 '종류'가 중요하다 — 안드로이드 카톡 빈 메시지 사건 (v43)
+   * 예전엔 text/plain(.txt) 으로 보냈는데, 안드로이드 카톡은 text/plain 을 받으면
+   * '파일'이 아니라 '글'로 알아듣는다. 그런데 딸려온 글이 없으니 → 빈 메시지만 갔다.
+   * → application/json(.json) 으로 보내면 카톡이 '파일'로 받는다.
+   * 다만 브라우저마다 보낼 수 있는 파일 종류가 정해져 있어서, 못 보내는 브라우저면
+   * 예전 방식(.txt)으로 되돌아간다 → 어떤 경우에도 지금보다 나빠지지 않는다.
+   * (복원 쪽은 .txt·.json 둘 다 받는다 — index.html 의 restoreInput accept) */
+  const BACKUP_TYPES = [
+    { name: "별밤책-백업.json", type: "application/json" },
+    { name: "별밤책-백업.txt", type: "text/plain" },
+  ];
+  function pickShareFile(blob) {
+    for (const t of BACKUP_TYPES) {
+      try {
+        const f = new File([blob], t.name, { type: t.type });
+        if (!navigator.canShare || navigator.canShare({ files: [f] })) return f;
+      } catch (e) {}
+    }
+    return null;
+  }
+
   async function buildBackup() {
     backupReady = null; backupBuilding = true; updateBackupHint();
     try {
@@ -1014,9 +1035,9 @@
       }
       if (!clips.length) { backupReady = { empty: true, count: 0 }; return; }
       const payload = { app: "별밤책", kind: "scene-clips", version: 3, exportedAt: Date.now(), clips };
-      const blob = new Blob([JSON.stringify(payload)], { type: "text/plain" });
-      const file = new File([blob], "별밤책-백업.txt", { type: "text/plain" });
-      backupReady = { file, blob, count: clips.length, bytes: blob.size };
+      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      const file = pickShareFile(blob);
+      backupReady = { file, blob, name: (file && file.name) || BACKUP_TYPES[0].name, count: clips.length, bytes: blob.size };
     } catch (e) { backupReady = null; }
     finally { backupBuilding = false; updateBackupHint(); }
   }
@@ -1041,7 +1062,7 @@
      * (실제로 "공유는 눌렀는데 파일이 첨부가 안 됐다"는 제보를 받아 고쳤다 — v33)
      * 절대 files 와 text 를 함께 보내도록 되돌리지 말 것. */
     try {
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file] });
         markBackedUp();
         toast(count + "개 백업을 보냈어요 🛟  (카톡 ‘나에게’ 추천)"); track("backup"); return;
@@ -1052,12 +1073,23 @@
     backupFallback(blob);
   }
 
+  /* 공유창을 거치지 않고 곧장 파일로 저장한다.
+   * 카톡 공유가 말썽일 때(안드로이드 빈 메시지 등) 확실하게 돌아가는 두 번째 길. */
+  function saveBackupToFile() {
+    if (backupBuilding || !backupReady) { toast("백업을 준비하고 있어요. 잠깐 뒤 다시 눌러주세요"); return; }
+    if (backupReady.empty) { toast("백업할 녹음이 없어요"); return; }
+    if (isInAppBrowser()) { toast("카톡·인스타 안에서는 저장이 안 돼요. 사파리·크롬으로 열어주세요"); return; }
+    downloadBlob(backupReady.blob, backupReady.name);
+    markBackedUp(); track("backup_save");
+    toast("파일로 저장했어요 📁  카톡 ‘나에게’에서 ＋ → 파일로 붙여 보내세요");
+  }
+
   /* 공유창이 안 뜨거나 파일 공유를 못 하는 환경.
    * 예전엔 파일만 슬쩍 저장하고 작은 안내만 띄워서, 사용자는 "아무 일도 안 일어났다"고 느꼈다.
    * 무슨 일이 있었는지와 다음에 뭘 하면 되는지를 분명히 보여준다. */
   function backupFallback(blob) {
     const iab = isInAppBrowser();
-    if (!iab) downloadBlob(blob, "별밤책-백업.txt");   // 인앱 브라우저는 저장도 잘 안 된다
+    if (!iab) downloadBlob(blob, (backupReady && backupReady.name) || BACKUP_TYPES[0].name);   // 인앱 브라우저는 저장도 잘 안 된다
     markBackedUp(); track("backup_fallback");
     openModal(`
       <div class="modal-body">
@@ -1072,12 +1104,12 @@
                <li><span>거기서 <b>⚙️ 더보기 → 백업</b> 을 다시 눌러주세요</span></li>
              </ol>`
           : `<p>이 브라우저는 카톡으로 <b>바로 보내기</b>를 지원하지 않아서,
-             <b>별밤책-백업.txt</b> 파일로 저장했어요.</p>
+             <b>별밤책-백업</b> 파일로 저장했어요.</p>
              <p><b>카톡으로 보내려면:</b></p>
              <ol class="steps-big">
                <li><span>카톡에서 <b>‘나에게’ 채팅방</b>을 여세요</span></li>
                <li><span><b>+ 버튼 → 파일</b> 을 고르세요</span></li>
-               <li><span>방금 저장한 <b>별밤책-백업.txt</b> 를 고르면 끝!</span></li>
+               <li><span>방금 저장한 <b>별밤책-백업</b> 파일을 고르면 끝!</span></li>
              </ol>
              <p class="hint">📁 파일은 <b>“파일” 앱</b>(안드로이드는 <b>다운로드</b> 폴더)에 있어요.</p>`}
         <button class="modal-btn gold" id="bfOk" type="button">알겠어요</button>
@@ -1422,6 +1454,7 @@
         <p>녹음은 이 기기 안에만 있어요. <b>카카오톡 ‘나에게 보내기’</b>로 백업해 두면,
         폰을 바꾸거나 실수로 지워져도 카톡에서 다시 <b>복원</b>할 수 있어요.</p>
         <button class="modal-btn gold" id="doBackup" type="button">💬 카카오톡으로 백업 보내기</button>
+        <button class="modal-btn" id="saveBackup" type="button">📁 파일로 저장하기</button>
         <label class="check"><input type="checkbox" id="bkHist" ${backupWithHistory ? "checked" : ""} />
         <span>지난 녹음까지 함께 담기 <b>(파일이 커져요)</b></span></label>
         <p class="hint" id="backupHint">백업 파일을 준비하고 있어요…</p>
@@ -1429,6 +1462,8 @@
           <li>위 버튼을 누르면 <b>공유창</b>이 떠요</li>
           <li><b>카카오톡</b> 선택 → <b>나에게 보내기</b>(내 채팅방)에 저장</li>
         </ol>
+        <p class="hint">💬 <b>카톡에 빈 메시지만 갔다면</b> — <b>📁 파일로 저장하기</b> 를 누른 다음,
+        카톡 <b>나에게 보내기</b> 에서 <b>＋ → 파일</b> 로 그 파일을 직접 붙여 보내세요.</p>
         <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.</p>
         <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 백업이 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.
         백업은 사진첩이 아니라 <b>파일</b>로 저장돼요.</p>
@@ -1436,6 +1471,7 @@
       wire: () => {
         $("bkHist").addEventListener("change", (e) => { backupWithHistory = e.target.checked; buildBackup(); });
         $("doBackup").addEventListener("click", sendBackup);
+        $("saveBackup").addEventListener("click", saveBackupToFile);
         buildBackup();   // 이 화면에 들어올 때만 준비 → 더보기 여는 건 가벼워진다
       },
     },
@@ -1444,11 +1480,11 @@
     restore: {
       body: () => `
         <h2>백업에서 복원하기 📥</h2>
-        <p>백업해 둔 <b>별밤책-백업.txt</b> 파일을 고르면 녹음이 되살아나요.
+        <p>백업해 둔 <b>별밤책-백업</b> 파일을 고르면 녹음이 되살아나요.
         복원은 <b>합치기</b>라서 <b>내 녹음은 지워지지 않고</b>, 같은 자리는 <b>더 새로 녹음한 쪽이 남아요.</b></p>
         <ol class="steps">
-          <li>카톡 <b>나에게</b>에서 <b>별밤책-백업.txt</b>를 눌러 → <b>공유 → “파일에 저장”</b></li>
-          <li>아래 버튼을 누르고, 방금 저장한 <b>별밤책-백업.txt</b>를 고르기</li>
+          <li>카톡 <b>나에게</b>에서 <b>별밤책-백업</b> 파일을 눌러 → <b>공유 → “파일에 저장”</b></li>
+          <li>아래 버튼을 누르고, 방금 저장한 <b>별밤책-백업</b> 파일을 고르기</li>
         </ol>
         <button class="modal-btn ghost" id="doRestore" type="button">📥 백업 파일 고르기</button>
         <p class="hint">💡 엄마·아빠가 <b>서로의 백업 파일</b>을 복원하면, 두 사람 목소리가 <b>한 폰에</b> 나란히 모여요.</p>
