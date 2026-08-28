@@ -35,7 +35,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v44";
+  const APP_VERSION = "v45";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -691,9 +691,11 @@
     if (!blob.size) { toast("녹음이 비어 있어요. 다시 해볼까요?"); renderRec(false); return; }
     track("record_" + picked);
     const key = sceneKey(rec.story.id, rec.voice, rec.scene);
+    let wasComplete = false;
     try {
       await pushHistory(key);                        // 예전 녹음을 '지난 녹음'으로 옮겨 둔다 (안 지운다)
       await dbPut({ key, storyId: rec.story.id, voice: rec.voice, scene: rec.scene, blob, mime, createdAt: Date.now() });
+      wasComplete = rec.done.size >= sceneCount(rec.story);   // 이번 녹음 '전에' 이미 다 채워져 있었나
       rec.done.add(rec.scene); track("record_save");
       await loadHistMap();
     } catch (e) { toast("저장에 실패했어요 (저장 공간을 확인해 주세요)"); renderRec(false); return; }
@@ -708,7 +710,11 @@
     }
 
     const N = sceneCount(rec.story);
-    if (rec.done.size >= N) { toast("이 이야기를 다 녹음했어요 🎉  백업도 잊지 마세요!"); renderRec(true); return; }
+    /* 🎉 축하는 '마지막 빈 칸을 방금 채운 그 순간'에만 한 번.
+     * 예전엔 다 차 있기만 하면 매번 띄우고 다음 장면으로도 안 넘어갔다.
+     * → 전체를 다시 녹음할 때 장면마다 메시지가 뜨고 ❯ 를 손으로 눌러야 했다(민정 제보, v45).
+     * 백업 안내는 홈 아래 "🛟 아직 백업 전이에요" 띠가 따로 해준다. */
+    if (rec.done.size >= N && !wasComplete) { toast("이 이야기를 다 녹음했어요 🎉  백업도 잊지 마세요!"); renderRec(true); return; }
     /* 다음 장면으로 — 반드시 '순서대로' 넘어간다.
      * 예전엔 '아직 안 한 장면'으로 건너뛰었는데, 1번을 다시 녹음하면 6번으로 튀어서
      * 2·3번을 이어서 다시 녹음할 수가 없었다. 처음부터 다시 담고 싶을 때 불편했다. */
