@@ -116,7 +116,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v49";
+  const APP_VERSION = "v50";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -1268,9 +1268,53 @@
     if (backupBuilding || !backupReady) { toast("백업을 준비하고 있어요. 잠깐 뒤 다시 눌러주세요"); return; }
     if (backupReady.empty) { toast("백업할 녹음이 없어요"); return; }
     if (isInAppBrowser()) { toast("카톡·인스타 안에서는 저장이 안 돼요. 사파리·크롬으로 열어주세요"); return; }
+    /* 🚨 아이폰 '홈 화면 앱'에서는 이 방식(바로 내려받기)이 통하지 않는다.
+     * 저장됐다는 표시도, 파일도 남지 않아서 "저장했다는데 어디에도 없다"가 된다(민정 제보, v49).
+     * → 저장한 척하지 말고, 저장 위치를 직접 고르는 '내보내기' 로 안내한다. */
+    if (isIOS && isStandalone()) { iosSaveHelp(); return; }
     downloadBlob(backupReady.blob, backupReady.name);
     markBackedUp(); track("backup_save");
-    toast("폰에 저장했어요 📁  ‘파일’ 앱(안드로이드는 다운로드)에 있어요");
+    savedWhere();
+  }
+  /* 아이폰 홈 화면 앱 — 바로 저장이 안 되는 경우 */
+  function iosSaveHelp() {
+    openModal(`
+      <div class="modal-body">
+        <h2>여기서는 ‘바로 저장’이 안 돼요 🙏</h2>
+        <p><b>홈 화면 앱(별밤책 아이콘)</b>으로 열면 아이폰이 파일 내려받기를 막아 둬요.
+        저장한 것처럼 보여도 <b>파일이 남지 않아요.</b></p>
+        <p>대신 <b>내보내기</b>로 저장하면 <b>저장할 곳을 직접 고르고 ‘저장’을 누를 수 있어요.</b></p>
+        <button class="modal-btn gold" id="iosGo" type="button">🛟 내보내기로 저장하기</button>
+        <ol class="steps">
+          <li>공유창에서 <b>“파일에 저장”</b> 고르기</li>
+          <li>폴더를 고르고 오른쪽 위 <b>저장</b> 누르기</li>
+        </ol>
+        <p class="hint">💡 사파리로 열었다면 ‘폰에 바로 저장하기’도 잘 돼요
+        (받은 파일은 <b>파일 앱 → 찾아보기 → 다운로드</b>).</p>
+      </div>`);
+    const go = $("iosGo");
+    if (go) go.addEventListener("click", () => { closeModal(); sendBackup(); });
+  }
+  /* 저장한 뒤 — "어디에 저장됐는지"를 토스트 대신 화면으로 분명히 알려준다.
+   * 토스트는 금방 사라져서 "저장이 된 건가?" 하고 헤매게 된다(민정 제보). */
+  function savedWhere() {
+    openModal(`
+      <div class="modal-body">
+        <h2>폰에 저장했어요 📁</h2>
+        <p>파일 이름은 <b>${escapeHtml((backupReady && backupReady.name) || "별밤책-백업")}</b> 이에요.</p>
+        ${isIOS
+          ? `<p><b>어디에 있나요?</b></p>
+             <ol class="steps">
+               <li>사파리 <b>주소창 옆 ⬇︎</b> 를 누르면 방금 받은 파일이 보여요</li>
+               <li><b>‘파일’ 앱 → 찾아보기 → 다운로드</b> 에도 있어요</li>
+             </ol>
+             <p class="hint">📂 안 보이면 <b>설정 → Safari → 다운로드</b> 에서 저장 위치를 확인해 보세요.
+             그래도 없으면 위의 <b>🛟 백업 파일 내보내기</b> 로 저장해 주세요 — 저장할 곳을 직접 고를 수 있어요.</p>`
+          : `<p><b>‘내 파일’ 앱 → 다운로드</b> 폴더에 있어요.</p>
+             <p class="hint">📂 안 보이면 위의 <b>🛟 백업 파일 내보내기</b> 로 저장할 곳을 직접 골라 주세요.</p>`}
+        <button class="modal-btn gold" id="swOk" type="button">알겠어요</button>
+      </div>`);
+    const ok = $("swOk"); if (ok) ok.addEventListener("click", closeModal);
   }
 
   /* 공유창이 안 뜨거나 파일 공유를 못 하는 환경.
@@ -1608,21 +1652,30 @@
   function openMore(page) {
     if (page && MORE_PAGES[page]) return openMorePage(page);
     const voice = getMyVoice(), name = getBabyName();
+    /* 🚨 정해 둔 값이 맨 위에 온다.
+     * 예전엔 '👋 처음이세요?' 가 맨 위였는데, 이미 다 정해 둔 사람은 그걸 보고
+     * "내 설정이 다 날아갔나?" 하고 놀랐다(민정 제보, v49).
+     * → 내가 정한 것(누구 폰·아기 이름)을 늘 맨 위에 값과 함께 보여주고,
+     *   '처음이세요?' 는 아직 안 정한 게 있을 때만 눈에 띄게 올린다. */
+    const setUp = !!voice && !!name;
     openModal(`
       <div class="modal-body">
         <h2>더보기 ⚙️</h2>
         <ul class="more-menu">
+          ${moreRow("who", "🎤", "이 폰은 누구 폰",
+            voice ? `지금: ${escapeHtml(voicePhone(voice))}` : "아직 안 정했어요", voice ? "set" : "")}
+          ${moreRow("name", "👶", "아기 이름",
+            name ? `지금: ${escapeHtml(name)}` : "아직 안 넣었어요", name ? "set" : "")}
+        </ul>
+        ${setUp ? "" : `<ul class="more-menu">
           ${moreRow("howRec", "👋", "처음이세요?", "녹음부터 들려주기까지 차근차근", "first")}
-        </ul>
-        <ul class="more-menu">
-          ${moreRow("who", "🎤", "이 폰은 누구 폰", voice ? `지금: ${escapeHtml(voicePhone(voice))}` : "아직 안 정했어요")}
-          ${moreRow("name", "👶", "아기 이름", name ? `지금: ${escapeHtml(name)}` : "아직 안 넣었어요")}
-        </ul>
+        </ul>`}
         <ul class="more-menu">
           ${moreRow("backup", "🛟", "녹음 백업하기", lastBackupAt() ? `마지막 백업: ${agoText(lastBackupAt())}` : "아직 백업한 적 없어요")}
           ${moreRow("restore", "📥", "백업에서 복원하기", "백업 파일에서 녹음 합치기")}
         </ul>
         <ul class="more-menu">
+          ${setUp ? moreRow("howRec", "👋", "처음이세요?", "녹음부터 들려주기까지 차근차근") : ""}
           ${moreRow("howRec", "🎙️", "녹음하는 법")}
           ${moreRow("howPlay", "🌙", "들려주는 법")}
           ${moreRow("install", "📲", "홈 화면에 앱으로 넣기")}
@@ -1724,6 +1777,9 @@
           <li><span>✉️</span><span><b>메일</b><br/>나에게 보내기</span></li>
         </ul>
         <button class="modal-btn ghost" id="saveBackup" type="button">📁 폰에 바로 저장하기</button>
+        ${isIOS && isStandalone()
+          ? `<p class="hint">※ <b>홈 화면 앱</b>에서는 ‘바로 저장’이 막혀 있어요 —
+             위 <b>🛟 내보내기</b> 로 <b>“파일에 저장”</b> 을 골라 주세요.</p>` : ""}
         <label class="check"><input type="checkbox" id="bkHist" ${backupWithHistory ? "checked" : ""} />
         <span>지난 녹음까지 함께 담기 <b>(파일이 커져요)</b></span></label>
         <p class="hint" id="backupHint">백업 파일을 준비하고 있어요…</p>
