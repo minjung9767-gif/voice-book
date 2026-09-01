@@ -16,3 +16,16 @@
   for = "/manifest.webmanifest"
   [headers.values]
     Cache-Control = "no-cache"
+
+# index.html 은 절대 오래 갖고 있지 않게 한다.
+# 폰이 예전 index.html 을 붙잡고 있으면 '예전 뼈대 + 새 app.js' 반쪽 상태가 되어
+# 화면이 텅 빈다(v47에서 실제로 겪음). 파일들은 주소에 ?v= 가 붙어 있어 따로 캐시돼도 안전하다.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"

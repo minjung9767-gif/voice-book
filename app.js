@@ -116,7 +116,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v47";
+  const APP_VERSION = "v48";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -181,18 +181,63 @@
     return [gridEl, pickListEl, shuffleBtn, emptyNote, installBar, $("shareBtn"), $("recEntry"), $("playHome"), $("recBack"), $("pickHome")]
       .every((el) => !!el);
   }
-  function recoverFromMixedVersion() {
+  /* 캐시·서비스워커를 싹 비우고 다시 받아온다.
+   * ⚠️ 그냥 location.reload() 하면 안 된다 —
+   *    브라우저가 자기 사본으로 갖고 있는 **예전 index.html** 을 또 내줘서(깃허브 페이지는 10분),
+   *    비우고 새로고침해도 같은 반쪽 상태가 되풀이된다(v47에서 실제로 겪음).
+   *    주소 뒤에 ?fresh=시각 을 붙이면 브라우저가 '처음 보는 주소'로 여겨 새로 받아온다. */
+  function reloadFresh() {
     try {
-      if (sessionStorage.getItem("mixFix") === "1") return;   // 한 번만 (무한 새로고침 방지)
-      sessionStorage.setItem("mixFix", "1");
-    } catch (e) { return; }
-    const again = () => location.reload();
+      const u = new URL(location.href);
+      u.searchParams.set("fresh", String(Date.now()));
+      location.replace(u.toString());
+    } catch (e) { location.reload(); }
+  }
+  function wipeAndReload(after) {
     const jobs = [];
     if (window.caches && caches.keys) jobs.push(caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))));
     if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
       jobs.push(navigator.serviceWorker.getRegistrations().then((rs) => Promise.all(rs.map((r) => r.unregister()))));
     }
-    Promise.all(jobs).then(again, again);
+    Promise.all(jobs).then(after, after);
+  }
+  function recoverFromMixedVersion() {
+    let tries = 0;
+    try {
+      tries = parseInt(sessionStorage.getItem("mixFix") || "0", 10) || 0;
+      sessionStorage.setItem("mixFix", String(tries + 1));
+    } catch (e) { tries = 2; }                       // 저장을 못 하는 브라우저면 새로고침을 되풀이하지 않는다
+    if (tries >= 2) { showMixedHelp(); return; }     // 두 번 해도 안 되면 텅 빈 화면 대신 안내를 띄운다
+    wipeAndReload(reloadFresh);
+  }
+  /* 그래도 안 될 때 — 텅 빈 화면으로 두지 않는다.
+   * ⚠️ 이때는 style.css 도 예전 것일 수 있어서, 생김새를 태그 안에 직접 적는다(CSS 에 기대지 않음). */
+  function showMixedHelp() {
+    try {
+      const box = document.createElement("div");
+      box.setAttribute("style", "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;" +
+        "justify-content:center;padding:24px;background:#141a45;color:#e7e2f5;" +
+        "font-family:'Jua','Apple SD Gothic Neo','Malgun Gothic',sans-serif;text-align:center;");
+      box.innerHTML =
+        "<div style=\"max-width:340px\">" +
+        "<div style=\"font-size:44px;margin-bottom:10px\">🌙</div>" +
+        "<h2 style=\"font-size:22px;margin:0 0 12px\">앱을 새로 받는 중이에요</h2>" +
+        "<p style=\"font-size:16px;line-height:1.6;margin:0 0 14px;opacity:.9\">" +
+        "업데이트 파일이 <b>반쪽만</b> 내려와서 잠깐 화면이 안 나와요.<br/>" +
+        "아래 버튼을 눌러 주세요.</p>" +
+        "<button id=\"mixGo\" type=\"button\" style=\"font-family:inherit;font-size:18px;padding:14px 22px;" +
+        "border:0;border-radius:16px;background:#f4d58d;color:#3a2f10;cursor:pointer\">🔄 새로 받기</button>" +
+        "<p style=\"font-size:14px;line-height:1.6;margin:16px 0 0;opacity:.75\">" +
+        "🔒 <b>녹음은 안전해요</b> — 기기 안에 그대로 있어요.<br/>" +
+        "그래도 안 나오면 앱을 완전히 껐다가 다시 열어 주세요.</p></div>";
+      document.body.appendChild(box);
+      const go = box.querySelector("#mixGo");
+      if (go) go.addEventListener("click", () => {
+        go.textContent = "받는 중…";
+        try { sessionStorage.removeItem("mixFix"); } catch (e) {}
+        wipeAndReload(reloadFresh);
+      });
+    } catch (e) {}
   }
   if (!versionsMatch()) { recoverFromMixedVersion(); return; }
   try { sessionStorage.removeItem("mixFix"); } catch (e) {}   // 판이 맞으면 복구 기록은 지운다
