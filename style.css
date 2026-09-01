@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v48";
+  --v: "v49";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
@@ -470,6 +470,28 @@ body.no-moon .moon { display: none; }
 .plan .n { font-family: "Jua", sans-serif; font-size: 19px; color: var(--gold); white-space: nowrap; }
 .plan li.zero { opacity: .5; }
 .plan li.zero .n { color: var(--muted); }
+/* 백업 파일을 둘 만한 곳 — 어느 하나를 권하지 않고 나란히 보여준다 */
+.dest {
+  list-style: none; margin: 10px 0 14px; padding: 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.dest li {
+  display: flex; align-items: center; gap: 8px; padding: 10px;
+  border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--glass-brd);
+  font-size: 13px; line-height: 1.45; color: var(--cream-soft);
+}
+.dest li span:first-child { font-size: 20px; }
+.dim { color: var(--muted); font-size: 13px; line-height: 1.5; }
+/* 접었다 펴는 안내 (카톡처럼 '필요한 사람만' 볼 내용) */
+.fold { margin: 12px 0; border-top: 1px solid var(--glass-brd); padding-top: 10px; }
+.fold > summary {
+  cursor: pointer; font-size: 15px; color: var(--cream-soft); list-style: none;
+  padding: 6px 0;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after { content: " ›"; opacity: .6; }
+.fold[open] > summary::after { content: " ⌄"; }
+
 .who { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 4px; }
 .who-b {
   flex: 1 1 40%; min-width: 130px; font-family: inherit; font-size: 17px; padding: 14px 10px;

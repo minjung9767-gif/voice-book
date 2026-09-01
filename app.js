@@ -116,7 +116,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v48";
+  const APP_VERSION = "v49";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -542,6 +542,7 @@
 
   /* ================= 홈 하단 안내 한 줄 ================= */
   function hasBackedUp() { try { return !!localStorage.getItem("lastBackupAt"); } catch (e) { return false; } }
+  function lastBackupAt() { try { return +localStorage.getItem("lastBackupAt") || 0; } catch (e) { return 0; } }
   function markBackedUp() { try { localStorage.setItem("lastBackupAt", String(Date.now())); } catch (e) {} updateFootNote(homeHasRecording); }
   let homeHasRecording = false;
   function updateFootNote(anyRecording) {
@@ -1175,12 +1176,18 @@
    * 다만 브라우저마다 보낼 수 있는 파일 종류가 정해져 있어서, 못 보내는 브라우저면
    * 예전 방식(.txt)으로 되돌아간다 → 어떤 경우에도 지금보다 나빠지지 않는다.
    * (복원 쪽은 .txt·.json 둘 다 받는다 — index.html 의 restoreInput accept) */
-  const BACKUP_TYPES = [
-    { name: "별밤책-백업.json", type: "application/json" },
-    { name: "별밤책-백업.txt", type: "text/plain" },
+  /* 파일 이름에 날짜를 넣는다 — 파일 앱·드라이브에 여러 개 쌓였을 때 최신을 바로 알 수 있게.
+   * (예: 별밤책-백업-2026-09-01.json) 복원 쪽은 이름을 보지 않으므로 마음대로 지어도 된다. */
+  function todayStamp() {
+    const d = new Date(), z = (n) => (n < 10 ? "0" + n : String(n));
+    return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+  }
+  const backupTypes = () => [
+    { name: `별밤책-백업-${todayStamp()}.json`, type: "application/json" },
+    { name: `별밤책-백업-${todayStamp()}.txt`, type: "text/plain" },
   ];
   function pickShareFile(blob) {
-    for (const t of BACKUP_TYPES) {
+    for (const t of backupTypes()) {
       try {
         const f = new File([blob], t.name, { type: t.type });
         if (!navigator.canShare || navigator.canShare({ files: [f] })) return f;
@@ -1207,7 +1214,7 @@
                         voices: customVoices(), clips };
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
       const file = pickShareFile(blob);
-      backupReady = { file, blob, name: (file && file.name) || BACKUP_TYPES[0].name, count: clips.length, bytes: blob.size };
+      backupReady = { file, blob, name: (file && file.name) || backupTypes()[0].name, count: clips.length, bytes: blob.size };
     } catch (e) { backupReady = null; }
     finally { backupBuilding = false; updateBackupHint(); }
   }
@@ -1222,7 +1229,7 @@
     const mb = backupReady.bytes ? " · 약 " + Math.max(1, Math.round(backupReady.bytes / 1048576)) + "MB" : "";
     /* 파일이 크면 폰이 카톡 공유창을 못 띄우는 일이 있다 → 미리 '파일로 저장하기'를 권한다 */
     const big = backupReady.bytes > 20 * 1048576
-      ? "<br><b>파일이 커요.</b> 카톡 공유가 막히면 아래 <b>📁 파일로 저장하기</b> 를 쓰세요."
+      ? "<br><b>파일이 커요.</b> 공유창이 막히면 아래 <b>📁 폰에 바로 저장하기</b> 를 쓰세요."
       : "";
     h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음을 보낼 수 있어요" + mb + "." + big;
   }
@@ -1245,7 +1252,7 @@
       else {
         await navigator.share({ files: [file] });
         markBackedUp();
-        toast(count + "개 백업을 보냈어요 🛟  (카톡 ‘나에게’ 추천)"); track("backup"); return;
+        toast(count + "개 백업을 보냈어요 🛟"); track("backup"); return;
       }
     } catch (e) {
       if (e && e.name === "AbortError") return;   // 사용자가 취소
@@ -1263,7 +1270,7 @@
     if (isInAppBrowser()) { toast("카톡·인스타 안에서는 저장이 안 돼요. 사파리·크롬으로 열어주세요"); return; }
     downloadBlob(backupReady.blob, backupReady.name);
     markBackedUp(); track("backup_save");
-    toast("파일로 저장했어요 📁  카톡 ‘나에게’에서 ＋ → 파일로 붙여 보내세요");
+    toast("폰에 저장했어요 📁  ‘파일’ 앱(안드로이드는 다운로드)에 있어요");
   }
 
   /* 공유창이 안 뜨거나 파일 공유를 못 하는 환경.
@@ -1271,7 +1278,7 @@
    * 무슨 일이 있었는지와 다음에 뭘 하면 되는지를 분명히 보여준다. */
   function backupFallback(blob, why) {
     const iab = isInAppBrowser();
-    if (!iab) downloadBlob(blob, (backupReady && backupReady.name) || BACKUP_TYPES[0].name);   // 인앱 브라우저는 저장도 잘 안 된다
+    if (!iab) downloadBlob(blob, (backupReady && backupReady.name) || backupTypes()[0].name);   // 인앱 브라우저는 저장도 잘 안 된다
     markBackedUp(); track("backup_fallback");
     openModal(`
       <div class="modal-body">
@@ -1285,15 +1292,17 @@
                <li><span><b>“다른 브라우저로 열기 / Safari로 열기”</b> 를 고르세요</span></li>
                <li><span>거기서 <b>⚙️ 더보기 → 백업</b> 을 다시 눌러주세요</span></li>
              </ol>`
-          : `<p>카톡 공유창이 뜨지 않아서 <b>별밤책-백업</b> 파일로 저장했어요.
-             <b>백업은 제대로 됐어요</b> — 아래대로 카톡에 붙여만 주시면 돼요.</p>
-             <p><b>카톡으로 보내려면:</b></p>
-             <ol class="steps-big">
-               <li><span>카톡에서 <b>‘나에게’ 채팅방</b>을 여세요</span></li>
-               <li><span><b>+ 버튼 → 파일</b> 을 고르세요</span></li>
-               <li><span>방금 저장한 <b>별밤책-백업</b> 파일을 고르면 끝!</span></li>
-             </ol>
-             <p class="hint">📁 파일은 <b>“파일” 앱</b>(안드로이드는 <b>다운로드</b> 폴더)에 있어요.</p>
+          : `<p>공유창이 뜨지 않아서 <b>별밤책-백업</b> 파일을 폰에 저장했어요.
+             <b>백업은 제대로 됐어요</b> — 파일은 <b>“파일” 앱</b>(안드로이드는 <b>다운로드</b> 폴더)에 있어요.</p>
+             <p>이 파일을 <b>드라이브·카톡 나에게·메일</b> 처럼 다시 찾기 쉬운 곳에도 한 벌 두시면 더 안심이에요.</p>
+             <details class="fold">
+               <summary>💬 카톡 ‘나에게’로 보내려면</summary>
+               <ol class="steps-big">
+                 <li><span>카톡에서 <b>‘나에게’ 채팅방</b>을 여세요</span></li>
+                 <li><span><b>+ 버튼 → 파일</b> 을 고르세요</span></li>
+                 <li><span>방금 저장한 <b>별밤책-백업</b> 파일을 고르면 끝!</span></li>
+               </ol>
+             </details>
              ${why ? `<p class="hint why">🔎 공유창이 안 뜬 이유: ${escapeHtml(why)}</p>` : ""}`}
         <button class="modal-btn gold" id="bfOk" type="button">알겠어요</button>
       </div>`);
@@ -1610,8 +1619,8 @@
           ${moreRow("name", "👶", "아기 이름", name ? `지금: ${escapeHtml(name)}` : "아직 안 넣었어요")}
         </ul>
         <ul class="more-menu">
-          ${moreRow("backup", "🛟", "녹음 백업하기", "카톡 ‘나에게’로 저장해 두기")}
-          ${moreRow("restore", "📥", "백업에서 복원하기", "엄마·아빠 녹음 합치기")}
+          ${moreRow("backup", "🛟", "녹음 백업하기", lastBackupAt() ? `마지막 백업: ${agoText(lastBackupAt())}` : "아직 백업한 적 없어요")}
+          ${moreRow("restore", "📥", "백업에서 복원하기", "백업 파일에서 녹음 합치기")}
         </ul>
         <ul class="more-menu">
           ${moreRow("howRec", "🎙️", "녹음하는 법")}
@@ -1703,20 +1712,32 @@
     backup: {
       body: () => `
         <h2>녹음 백업하기 🛟</h2>
-        <p>녹음은 이 기기 안에만 있어요. <b>카카오톡 ‘나에게 보내기’</b>로 백업해 두면,
-        폰을 바꾸거나 실수로 지워져도 카톡에서 다시 <b>복원</b>할 수 있어요.</p>
-        <button class="modal-btn gold" id="doBackup" type="button">💬 카카오톡으로 백업 보내기</button>
-        <button class="modal-btn" id="saveBackup" type="button">📁 파일로 저장하기</button>
+        <p>녹음은 이 기기 안에만 있어요. <b>백업 파일 하나</b>로 내보내 두면,
+        폰을 바꾸거나 실수로 지워져도 그 파일로 <b>되살릴 수 있어요.</b></p>
+        <button class="modal-btn gold" id="doBackup" type="button">🛟 백업 파일 내보내기</button>
+        <p class="hint">누르면 <b>공유창</b>이 떠요. 아래 어디에 두어도 괜찮아요 —
+        <b>내가 다시 찾을 수 있는 곳</b>이면 돼요.</p>
+        <ul class="dest">
+          <li><span>📁</span><span><b>파일 앱</b><br/>안드로이드는 ‘내 파일’</span></li>
+          <li><span>☁️</span><span><b>드라이브</b><br/>아이클라우드·구글</span></li>
+          <li><span>💬</span><span><b>카톡 나에게</b><br/>보내기 쉬움</span></li>
+          <li><span>✉️</span><span><b>메일</b><br/>나에게 보내기</span></li>
+        </ul>
+        <button class="modal-btn ghost" id="saveBackup" type="button">📁 폰에 바로 저장하기</button>
         <label class="check"><input type="checkbox" id="bkHist" ${backupWithHistory ? "checked" : ""} />
         <span>지난 녹음까지 함께 담기 <b>(파일이 커져요)</b></span></label>
         <p class="hint" id="backupHint">백업 파일을 준비하고 있어요…</p>
-        <ol class="steps">
-          <li>위 버튼을 누르면 <b>공유창</b>이 떠요</li>
-          <li><b>카카오톡</b> 선택 → <b>나에게 보내기</b>(내 채팅방)에 저장</li>
-        </ol>
-        <p class="hint">💬 <b>카톡에 빈 메시지만 갔다면</b> — <b>📁 파일로 저장하기</b> 를 누른 다음,
-        카톡 <b>나에게 보내기</b> 에서 <b>＋ → 파일</b> 로 그 파일을 직접 붙여 보내세요.</p>
-        <p class="hint">💡 <b>엄마·아빠 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.</p>
+        <p class="hint">💡 <b>여러 폰 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.</p>
+        <details class="fold">
+          <summary>💬 카톡으로 보낼 때</summary>
+          <ol class="steps">
+            <li>공유창에서 <b>카카오톡</b> → <b>나에게 보내기</b>(내 채팅방)</li>
+            <li><b>빈 메시지만 갔다면</b> — <b>📁 폰에 바로 저장하기</b> 를 누른 뒤,
+                카톡 <b>나에게</b>에서 <b>＋ → 파일</b> 로 그 파일을 붙여 보내세요</li>
+          </ol>
+          <p class="hint">※ 카톡에 둔 파일은 <b>시간이 지나면 다시 받지 못할 수 있어요.</b>
+          오래 두려면 <b>파일 앱·드라이브</b>에도 한 벌 두세요.</p>
+        </details>
         <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 백업이 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.
         백업은 사진첩이 아니라 <b>파일</b>로 저장돼요.</p>
         ${moreNext("restore", "📥 받은 백업 파일을 합치려면")}`,
@@ -1735,11 +1756,13 @@
         <p>백업해 둔 <b>별밤책-백업</b> 파일을 고르면 녹음이 되살아나요.
         복원은 <b>합치기</b>라서 <b>내 녹음은 지워지지 않고</b>, 같은 자리는 <b>더 새로 녹음한 쪽이 남아요.</b></p>
         <ol class="steps">
-          <li>카톡 <b>나에게</b>에서 <b>별밤책-백업</b> 파일을 눌러 → <b>공유 → “파일에 저장”</b></li>
-          <li>아래 버튼을 누르고, 방금 저장한 <b>별밤책-백업</b> 파일을 고르기</li>
+          <li><b>별밤책-백업</b> 파일을 폰에 준비해 두세요<br/>
+            <span class="dim">파일 앱·드라이브에 있으면 그대로 두면 되고,
+            카톡·메일로 받았다면 파일을 눌러 <b>공유 → “파일에 저장”</b></span></li>
+          <li>아래 버튼을 누르고 그 파일을 고르기</li>
         </ol>
         <button class="modal-btn ghost" id="doRestore" type="button">📥 백업 파일 고르기</button>
-        <p class="hint">💡 엄마·아빠가 <b>서로의 백업 파일</b>을 복원하면, 두 사람 목소리가 <b>한 폰에</b> 나란히 모여요.</p>
+        <p class="hint">💡 폰마다 <b>서로의 백업 파일</b>을 복원하면, 여러 사람 목소리가 <b>한 폰에</b> 나란히 모여요.</p>
         <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 잘 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.</p>
         ${moreNext("backup", "🛟 내 녹음을 백업하려면")}`,
       wire: () => { $("doRestore").addEventListener("click", () => restoreInput.click()); },
