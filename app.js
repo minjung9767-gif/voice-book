@@ -16,26 +16,107 @@
  *     (아기가 "세 번째 칸이 돼지 이야기"처럼 자리로 기억하기 때문).
  *   - 녹음은 홈 맨 아래 '🎙 녹음하기'로 한 단계 들어가야 나온다.
  *
- * 목소리: 예전에는 엄마·아빠를 따로 녹음했지만 지금은 한 명만 녹음한다.
- *   이미 해 둔 녹음을 버리지 않으려고, 이야기마다 장면이 더 많이 녹음된 쪽을 쓴다
- *   (수가 같으면 아빠). 안 쓰는 쪽도 지우지 않고 그대로 둔다.
+ * 목소리 자리: 이야기 하나는 한 사람이 읽는다. 자리는 엄마·아빠 둘로 시작하지만,
+ *   폰이 셋 이상이면(엄마 폰이 두 개, 아기방 폰 …) 이름을 지어 자리를 더 만들 수 있다.
+ *   이미 해 둔 녹음을 버리지 않으려고, 이야기마다 장면이 더 많이 녹음된 자리를 쓴다
+ *   (수가 같으면 아빠 → 엄마 차례). 안 쓰는 자리도 지우지 않고 그대로 둔다.
  * ========================================================= */
 (() => {
   "use strict";
 
-  const VOICE_LABEL = { mom: "엄마", dad: "아빠" };   // 저장 열쇠에 쓰이는 이름(화면에는 안 보임)
-  const DEFAULT_VOICE = "mom";                       // 이 폰의 주인을 아직 안 정했을 때만 쓰는 값
-
-  /* 이 폰의 주인(누가 녹음하는 사람인지).
+  /* ===== 목소리 자리(= 이 폰은 누구 폰인가) =====
    * 부부가 각자 폰에서 녹음한 뒤 백업 파일을 주고받는 게 이 앱의 핵심인데,
-   * 두 사람이 같은 칸에 녹음하면 복원할 때 한쪽이 덮어써져 사라진다.
-   * 그래서 폰마다 주인을 정해 두고, 새 녹음은 늘 그 사람 칸에 담는다. */
+   * 두 사람이 같은 자리에 녹음하면 복원할 때 한쪽이 덮어써져 사라진다.
+   * 그래서 폰마다 자리를 정해 두고, 새 녹음은 늘 그 자리에 담는다.
+   *
+   * 자리는 두 가지다.
+   *   - 처음부터 있는 자리 : mom · dad (이름 고정)
+   *   - 직접 만든 자리     : p + 여섯 글자 (예: pa3f9c1). 이름은 사용자가 짓는다.
+   *     → 폰이 셋 이상일 때(엄마 폰이 두 개, 아기방 폰 …) 쓰라고 만든 것.
+   * ⚠️ 자리 아이디는 녹음 열쇠(`이야기:v2:자리:장면`)에 그대로 들어간다 → 한 번 만들면 바꾸지 않는다.
+   *    (이름만 바꾼다. 아이디를 바꾸면 그 자리 녹음을 못 찾는다)
+   * 아이디를 무작위로 짓는 까닭: 두 폰에서 각자 새 자리를 만들어도 서로 겹치지 않게. */
+  const FIXED_VOICES = [
+    { id: "mom", name: "엄마", icon: "👩" },
+    { id: "dad", name: "아빠", icon: "👨" },
+  ];
+  const CUSTOM_ICON = "📱";
+  const CUSTOM_FALLBACK = "다른 폰";       // 이름을 모르는 자리(예전 백업에서 들어온 녹음)
+  const MAX_VOICES = 10;                   // 자리가 너무 많아지면 화면이 복잡해진다
+  const NAME_MAX = 10;
+  const DEFAULT_VOICE = "mom";             // 이 폰의 주인을 아직 안 정했을 때만 쓰는 값
+
+  const isCustomVoice = (v) => /^p[a-z0-9]{6}$/.test(String(v || ""));
+  const isVoiceId = (v) => v === "mom" || v === "dad" || isCustomVoice(v);
+
+  /* 직접 만든 자리 목록 — 이 폰의 localStorage 에 [{id,name}] 로 둔다 */
+  function customVoices() {
+    let a = [];
+    try { a = JSON.parse(localStorage.getItem("voiceSlots") || "[]"); } catch (e) { a = []; }
+    if (!Array.isArray(a)) return [];
+    const out = [], seen = {};
+    for (const it of a) {
+      if (!it || !isCustomVoice(it.id) || seen[it.id]) continue;
+      seen[it.id] = 1;
+      out.push({ id: it.id, name: String(it.name || "").slice(0, NAME_MAX) });
+    }
+    return out.slice(0, MAX_VOICES);
+  }
+  function saveCustomVoices(list) {
+    try { localStorage.setItem("voiceSlots", JSON.stringify(list.slice(0, MAX_VOICES))); } catch (e) {}
+  }
+  const allVoices = () => FIXED_VOICES.concat(
+    customVoices().map((s) => ({ id: s.id, name: s.name || CUSTOM_FALLBACK, icon: CUSTOM_ICON })));
+  const voiceInfo = (v) => allVoices().filter((x) => x.id === v)[0] || { id: v, name: CUSTOM_FALLBACK, icon: CUSTOM_ICON };
+  const voiceLabel = (v) => voiceInfo(v).name;
+  const voiceClass = (v) => (v === "mom" || v === "dad" ? v : "etc");   // 색깔용
+  // 화면에 "○○ 폰"으로 쓸 때. 직접 지은 이름엔 '폰'을 덧붙이지 않는다(→ "아기방 폰 폰" 방지)
+  const voicePhone = (v) => voiceLabel(v) + (v === "mom" || v === "dad" ? " 폰" : "");
+  function newVoiceId() {
+    let id;
+    do { id = "p" + Math.random().toString(36).slice(2, 8).replace(/[^a-z0-9]/g, "0"); } while (!isCustomVoice(id));
+    return id;
+  }
+  function addVoice(name) {
+    const list = customVoices();
+    if (list.length >= MAX_VOICES) return null;
+    const id = newVoiceId();
+    list.push({ id, name: String(name || "").slice(0, NAME_MAX) });
+    saveCustomVoices(list);
+    return id;
+  }
+  function renameVoice(id, name) {
+    const list = customVoices();
+    for (const s of list) if (s.id === id) s.name = String(name || "").slice(0, NAME_MAX);
+    saveCustomVoices(list);
+  }
+  function removeVoice(id) { saveCustomVoices(customVoices().filter((s) => s.id !== id)); }
+  /* 이 폰이 모르는 자리를 알게 됐을 때 목록에 넣어 준다.
+   * (백업을 합치면 상대 폰이 만든 자리의 녹음이 들어온다 → 목록에 없으면 화면에서 사라진 것처럼 보인다) */
+  function noteVoices(pairs) {
+    const list = customVoices(), have = {};
+    list.forEach((s) => (have[s.id] = s));
+    let changed = false;
+    for (const it of pairs || []) {
+      if (!it || !isCustomVoice(it.id)) continue;
+      const nm = String(it.name || "").slice(0, NAME_MAX);
+      if (!have[it.id]) {
+        if (list.length >= MAX_VOICES) continue;
+        const row = { id: it.id, name: nm };
+        list.push(row); have[it.id] = row; changed = true;
+      } else if (!have[it.id].name && nm) { have[it.id].name = nm; changed = true; }
+    }
+    if (changed) saveCustomVoices(list);
+    return changed;
+  }
+
+  /* 이 폰의 주인 */
   function getMyVoice() {
-    try { const v = localStorage.getItem("myVoice"); return VOICE_LABEL[v] ? v : null; } catch (e) { return null; }
+    try { const v = localStorage.getItem("myVoice"); return isVoiceId(v) ? v : null; } catch (e) { return null; }
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v46";
+  const APP_VERSION = "v47";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -71,6 +152,7 @@
   const nameChip = $("nameChip"), nameOwner = $("nameOwner");
   const recTitleEl = $("recTitle"), recProgEl = $("recProg"), recBottomEl = $("recBottom");
   const recArtEl = $("recArt"), recTextEl = $("recText"), legacyNoteEl = $("legacyNote");
+  const vtabsEl = $("vtabs");
   const playStageEl = $("playStage"), playArtEl = $("playArt"), playTextEl = $("playText"), pauseOvEl = $("pauseOv");
   const modalEl = $("modal"), modalBody = $("modalBody"), modalBackBtn = $("modalBack");
   const restoreInput = $("restoreInput"), toastEl = $("toast");
@@ -95,7 +177,7 @@
     if (cssStamp() !== APP_VERSION) return false;                                    // 모양이 딴 판
     if (!Array.isArray(STORIES) || !STORIES.length || !STORIES[0].scenes) return false; // 대본이 딴 판
     // 뼈대에 있어야 할 자리들이 실제로 있는지도 확인
-    if (document.querySelectorAll(".vtab").length !== 2) return false;
+    if (!document.getElementById("vtabs")) return false;
     return [gridEl, pickListEl, shuffleBtn, emptyNote, installBar, $("shareBtn"), $("recEntry"), $("playHome"), $("recBack"), $("pickHome")]
       .every((el) => !!el);
   }
@@ -212,46 +294,72 @@
     return Math.floor(d / 30) + "달 전";
   }
 
-  // 모든 열쇠를 한 번에 훑어 이야기별 진행 상황을 만든다.
-  //   → { [storyId]: { mom:Set(장면번호), dad:Set, momOld:bool, dadOld:bool } }
+  /* 모든 열쇠를 한 번에 훑어 이야기별 진행 상황을 만든다.
+   *   → { [storyId]: { v:{ 자리: Set(장면번호) }, old:{ 자리: true } } }
+   * 자리는 mom·dad 말고도 직접 만든 자리(p○○○○○○)가 얼마든지 올 수 있다. */
+  const EMPTY_SET = new Set();
+  const emptySlot = () => ({ v: {}, old: {} });
+  const doneSet = (p, v) => (p && p.v[v]) || EMPTY_SET;
+  const hasOld = (p, v) => !!(p && p.old[v]);
+  const anyRec = (p) => !!p && (Object.keys(p.old).length > 0 ||
+    Object.keys(p.v).some((k) => p.v[k].size > 0));
+
   async function loadProgress() {
     const map = {};
-    const slot = (id) => (map[id] = map[id] || { mom: new Set(), dad: new Set(), momOld: false, dadOld: false });
+    const slot = (id) => (map[id] = map[id] || emptySlot());
+    const found = {};                                        // 이 폰이 모르던 자리 모으기
     let keys = [];
     try { keys = await dbAllKeys(); } catch (e) { return map; }
     for (const raw of keys) {
       const p = String(raw).split(":");
       if (p.length === 4) {                                   // 장면 클립
         const [id, ver, v, idx] = [p[0], p[1], p[2], +p[3]];
-        if (ver !== STORE_VER || !VOICE_LABEL[v] || !(idx >= 0)) continue;
-        slot(id)[v].add(idx);
+        if (ver !== STORE_VER || !isVoiceId(v) || !(idx >= 0)) continue;
+        const sl = slot(id);
+        (sl.v[v] = sl.v[v] || new Set()).add(idx);
+        if (isCustomVoice(v)) found[v] = 1;
       } else if (p.length === 2) {                            // 예전 통 녹음
         const [id, v] = p;
-        if (!VOICE_LABEL[v]) continue;
-        slot(id)[v + "Old"] = true;
+        if (!isVoiceId(v)) continue;
+        slot(id).old[v] = true;
+        if (isCustomVoice(v)) found[v] = 1;
       }
     }
+    // 녹음은 있는데 목록에 없는 자리 → 이름 없이 등록해 둔다(나중에 이름을 고칠 수 있게)
+    noteVoices(Object.keys(found).map((id) => ({ id, name: "" })));
     return map;
   }
-  const emptySlot = () => ({ mom: new Set(), dad: new Set(), momOld: false, dadOld: false });
+
   /* 이 이야기가 쓸 '목소리 자리' 하나를 고른다.
-   * 엄마·아빠를 따로 녹음하던 시절의 녹음을 살리려고, 장면이 더 많이 담긴 쪽을 쓴다.
-   * 수가 같으면 아빠 쪽. (안 쓰는 쪽 녹음도 지우지 않고 그대로 남는다) */
+   * 여러 사람이 같은 이야기를 녹음해 뒀을 수 있으니 장면이 가장 많이 담긴 자리를 쓴다.
+   * 수가 같으면 예전 규칙 그대로 아빠 → 엄마 → 직접 만든 자리 차례.
+   * (안 쓰는 자리의 녹음도 지우지 않고 그대로 남는다) */
+  function voiceRank(v) {
+    if (v === "dad") return 0;
+    if (v === "mom") return 1;
+    const list = customVoices();
+    for (let i = 0; i < list.length; i++) if (list[i].id === v) return 2 + i;
+    return 2 + MAX_VOICES;
+  }
   function storyVoice(p) {
     if (!p) return myVoice();
-    if (p.dad.size > p.mom.size) return "dad";
-    if (p.mom.size > p.dad.size) return "mom";
-    if (p.dad.size > 0) return "dad";
-    if (p.dadOld) return "dad";
-    if (p.momOld) return "mom";
+    let best = null, bestN = 0;
+    for (const v of Object.keys(p.v)) {
+      const n = p.v[v].size;
+      if (!n) continue;
+      if (n > bestN || (n === bestN && voiceRank(v) < voiceRank(best))) { best = v; bestN = n; }
+    }
+    if (best) return best;
+    const olds = Object.keys(p.old).sort((a, b) => voiceRank(a) - voiceRank(b));
+    if (olds.length) return olds[0];
     return myVoice();
   }
   // 이 이야기를 지금 들려줄 수 있나? "scenes"(장면 다 있음) | "legacy"(예전 녹음) | null
   function storyKind(p, story) {
     if (!p) return null;
     const v = storyVoice(p);
-    if (p[v].size >= sceneCount(story)) return "scenes";
-    if (p[v + "Old"]) return "legacy";
+    if (doneSet(p, v).size >= sceneCount(story)) return "scenes";
+    if (hasOld(p, v)) return "legacy";
     return null;
   }
 
@@ -425,16 +533,16 @@
     let any = false, ready = 0;
     gridEl.innerHTML = STORIES.map((s, i) => {
       const p = prog[s.id];
-      if (p && (p.mom.size || p.dad.size || p.momOld || p.dadOld)) any = true;
+      if (anyRec(p)) any = true;
       const kind = storyKind(p, s);
       if (kind) ready++;
       // 들려줄 수 있으면 "누구 목소리인지", 아니면 "어디까지 녹음했는지"를 작게 붙인다.
       let tag = "";
       if (kind) {
         const v = storyVoice(p);
-        tag = `<span class="gvoice ${v}">🎤 ${VOICE_LABEL[v]}</span>`;
+        tag = `<span class="gvoice ${voiceClass(v)}">🎤 ${escapeHtml(voiceLabel(v))}</span>`;
       } else {
-        const c = p ? p[storyVoice(p)].size : 0;
+        const c = doneSet(p, storyVoice(p)).size;
         tag = `<span class="gtodo">🎙 ${c ? c + " / " + sceneCount(s) : "녹음 전"}</span>`;
       }
       return `<li class="gcard ${kind ? "" : "todo"}" data-idx="${i}" data-ready="${kind ? "1" : ""}" tabindex="0" role="button">` +
@@ -474,10 +582,10 @@
     const prog = await loadProgress();
     pickListEl.innerHTML = STORIES.map((s, i) => {
       const p = prog[s.id] || emptySlot();
-      const v = storyVoice(p), N = sceneCount(s), c = p[v].size;
-      const has = c > 0 || p[v + "Old"];
+      const v = storyVoice(p), N = sceneCount(s), c = doneSet(p, v).size;
+      const has = c > 0 || hasOld(p, v);
       // 녹음이 있으면 누구 목소리인지 먼저 보여준다
-      let pill = has ? `<span class="spill voice ${v}">🎤 ${VOICE_LABEL[v]}</span>` : "";
+      let pill = has ? `<span class="spill voice ${voiceClass(v)}">🎤 ${escapeHtml(voiceLabel(v))}</span>` : "";
       if (c === 0 && storyKind(p, s) === "legacy") pill += `<span class="spill old">예전 녹음</span>`;
       else if (c >= N) pill += `<span class="spill full">✅ 다 녹음했어요</span>`;
       else if (c > 0) pill += `<span class="spill part">${c} / ${N} 녹음</span>`;
@@ -513,8 +621,8 @@
   async function loadRecState(prog) {
     const p = (prog && prog[rec.story.id]) || (await loadProgress())[rec.story.id];
     rec.voice = storyVoice(p);                       // 이 이야기가 쓰는 목소리 자리
-    rec.done = new Set(p ? p[rec.voice] : []);
-    rec.hasLegacy = !!(p && p[rec.voice + "Old"]);
+    rec.done = new Set(doneSet(p, rec.voice));
+    rec.hasLegacy = hasOld(p, rec.voice);
     await loadHistMap();
   }
   /* 이 이야기·이 목소리의 '지난 녹음'이 장면마다 몇 개인지 미리 세어 둔다.
@@ -585,8 +693,16 @@
     bind("bStop", stopRecording);
   }
   function renderRec(anim) { paintRecScene(anim); renderRecTop(); renderRecBottom(); }
+  /* 녹음 화면 위 "누구 목소리?" 탭. 자리가 늘 수 있으니 열 때마다 새로 그린다. */
   function paintVoiceTabs() {
-    document.querySelectorAll(".vtab").forEach((t) => t.classList.toggle("on", t.dataset.voice === rec.voice));
+    if (!vtabsEl) return;
+    const list = allVoices();
+    if (!list.some((x) => x.id === rec.voice)) list.push(voiceInfo(rec.voice));   // 이름 모르는 자리도 보이게
+    vtabsEl.innerHTML = list.map((x) =>
+      `<button class="vtab ${x.id === rec.voice ? "on" : ""}" type="button" role="tab" data-voice="${x.id}">` +
+      `${x.icon} ${escapeHtml(x.name)}</button>`).join("");
+    vtabsEl.querySelectorAll(".vtab").forEach((t) =>
+      t.addEventListener("click", () => setVoice(t.dataset.voice)));
   }
   /* 누구 목소리인지 바꾸기. 이야기 하나는 한 사람이 읽는다는 원칙은 그대로고,
    * 여기서 고른 쪽에 녹음이 담긴다. 예전 녹음이 반대쪽에 있으면 그쪽 진행 상황이 보인다. */
@@ -596,12 +712,12 @@
     rec.voice = v; rec.scene = 0;
     paintVoiceTabs();
     const p = (await loadProgress())[rec.story.id];
-    rec.done = new Set(p ? p[v] : []);
-    rec.hasLegacy = !!(p && p[v + "Old"]);
+    rec.done = new Set(doneSet(p, v));
+    rec.hasLegacy = hasOld(p, v);
     const N = sceneCount(rec.story);
     for (let k = 0; k < N; k++) if (!rec.done.has(k)) { rec.scene = k; break; }
     renderRec(true);
-    toast(`${VOICE_LABEL[v]} 목소리로 녹음해요 🎤`);
+    toast(`${voiceLabel(v)} 목소리로 녹음해요 🎤`);
   }
 
   // 장면 이동. 녹음 확인 중이었다면 옮긴 장면의 녹음을 바로 이어 들려준다(빠른 확인).
@@ -1040,7 +1156,10 @@
         clips.push({ key: r.key, mime: r.mime || r.blob.type || "audio/webm", createdAt: r.createdAt || Date.now(), data: await blobToDataURL(r.blob) });
       }
       if (!clips.length) { backupReady = { empty: true, count: 0 }; return; }
-      const payload = { app: "별밤책", kind: "scene-clips", version: 3, exportedAt: Date.now(), clips };
+      /* voices = 직접 만든 자리의 이름표. 이게 있어야 상대 폰에서도 '아기방 폰'처럼 이름이 보인다.
+       * (없는 예전 백업도 그대로 받는다 — 그때는 이름 없이 '다른 폰'으로 보인다) */
+      const payload = { app: "별밤책", kind: "scene-clips", version: 4, exportedAt: Date.now(),
+                        voices: customVoices(), clips };
       const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
       const file = pickShareFile(blob);
       backupReady = { file, blob, name: (file && file.name) || BACKUP_TYPES[0].name, count: clips.length, bytes: blob.size };
@@ -1199,6 +1318,9 @@
       : (Array.isArray(payload.recordings) ? payload.recordings : null));
     if (!list || !list.length) { toast("별밤책 백업 파일이 아니에요"); return; }
 
+    // 백업에 담겨 온 '자리 이름표'를 먼저 등록해 둔다(합친 녹음이 제 이름으로 보이도록)
+    if (payload && Array.isArray(payload.voices)) noteVoices(payload.voices);
+
     // 지금 내 녹음과 견줘 본다
     const mine = {};
     try { (await dbAll()).forEach((r) => { if (r && r.key) mine[r.key] = r.createdAt || 0; }); } catch (e) {}
@@ -1325,28 +1447,62 @@
   }
   function modalGoBack() { const f = modalBackFn; if (f) { modalBackFn = null; f(); } else closeModal(); }
 
-  /* "이 폰은 누구 폰인가요?" — 녹음하러 처음 들어갈 때 한 번만 묻는다.
-   * 더보기에서 언제든 바꿀 수 있다. */
+  /* ===== "이 폰은 누구 폰인가요?" =====
+   * 녹음하러 처음 들어갈 때 한 번만 묻고, 더보기에서 언제든 바꾼다.
+   * 폰이 셋 이상이면 (엄마 폰이 두 개, 아기방 폰 …) 여기서 자리를 새로 만든다. */
+  function whoButtons(cur) {
+    return allVoices().map((x) =>
+      `<button class="who-b ${x.id === cur ? "on" : ""}" type="button" data-v="${x.id}">` +
+      `${x.icon} ${escapeHtml(voicePhone(x.id))}</button>`).join("");
+  }
+  /* '+ 다른 폰 추가' 를 누르면 나오는 이름 칸. 다 만들면 onAdd(새 자리 아이디) 를 부른다. */
+  function wireAddVoice(box, onAdd) {
+    const addBtn = box.querySelector(".who-add");
+    const form = box.querySelector(".who-new");
+    if (!addBtn || !form) return;
+    const input = form.querySelector("input");
+    addBtn.addEventListener("click", () => {
+      addBtn.hidden = true; form.hidden = false;
+      try { input.focus(); } catch (e) {}
+    });
+    const done = () => {
+      const nm = (input.value || "").trim();
+      if (!nm) { toast("이름을 적어 주세요 (예: 엄마 폰2)"); return; }
+      const id = addVoice(nm);
+      if (!id) { toast(`자리는 ${MAX_VOICES}개까지만 만들 수 있어요`); return; }
+      onAdd(id, nm);
+    };
+    form.querySelector(".who-ok").addEventListener("click", done);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } });
+  }
+  const addVoiceHtml = () =>
+    `<button class="who-b who-add" type="button">＋ 다른 폰 추가</button>
+     <div class="who-new" hidden>
+       <input class="text-input" type="text" maxlength="${NAME_MAX}" placeholder="예: 엄마 폰2, 아기방 폰" />
+       <button class="modal-btn gold who-ok" type="button">이 이름으로 만들기</button>
+     </div>`;
+
   function askMyVoice(after) {
     const cur = getMyVoice();
     openModal(`
       <div class="modal-body">
         <h2>이 폰은 누구 폰인가요? 🎤</h2>
         <p>여기서 녹음하는 목소리를 <b>이 사람 것</b>으로 담아 둘게요.
-        나중에 엄마·아빠가 <b>백업 파일을 주고받아도</b> 서로 덮어쓰지 않고 <b>나란히 합쳐져요.</b></p>
-        <div class="who">
-          <button class="who-b ${cur === "mom" ? "on" : ""}" type="button" data-v="mom">👩 엄마 폰</button>
-          <button class="who-b ${cur === "dad" ? "on" : ""}" type="button" data-v="dad">👨 아빠 폰</button>
-        </div>
-        <p class="hint">※ 나중에 <b>⚙️ 더보기</b>에서 바꿀 수 있어요. 이야기마다 따로 고르는 것도 그대로 돼요.</p>
+        나중에 <b>백업 파일을 주고받아도</b> 서로 덮어쓰지 않고 <b>나란히 합쳐져요.</b></p>
+        <div class="who">${whoButtons(cur)}${addVoiceHtml()}</div>
+        <p class="hint">※ 폰이 셋 이상이면 <b>＋ 다른 폰 추가</b>로 이름을 지어 두세요.
+        나중에 <b>⚙️ 더보기</b>에서 바꿀 수 있어요.</p>
       </div>`);
-    modalBody.querySelectorAll(".who-b").forEach((b) => b.addEventListener("click", () => {
-      setMyVoice(b.dataset.v);
+    const pick = (v) => {
+      setMyVoice(v);
       closeModal();
-      toast(`이 폰은 ${VOICE_LABEL[b.dataset.v]} 폰이에요 🎤`);
+      toast(`이 폰은 ${voicePhone(v)}이에요 🎤`);
       if (typeof after === "function") after();
       else if (homeEl.classList.contains("active")) renderHome();
-    }));
+    };
+    modalBody.querySelectorAll(".who-b[data-v]").forEach((b) =>
+      b.addEventListener("click", () => pick(b.dataset.v)));
+    wireAddVoice(modalBody, (id) => pick(id));
   }
 
   function openName(back) {
@@ -1405,7 +1561,7 @@
           ${moreRow("howRec", "👋", "처음이세요?", "녹음부터 들려주기까지 차근차근", "first")}
         </ul>
         <ul class="more-menu">
-          ${moreRow("who", "🎤", "이 폰은 누구 폰", voice ? `지금: ${VOICE_LABEL[voice]} 폰` : "아직 안 정했어요")}
+          ${moreRow("who", "🎤", "이 폰은 누구 폰", voice ? `지금: ${escapeHtml(voicePhone(voice))}` : "아직 안 정했어요")}
           ${moreRow("name", "👶", "아기 이름", name ? `지금: ${escapeHtml(name)}` : "아직 안 넣었어요")}
         </ul>
         <ul class="more-menu">
@@ -1442,24 +1598,56 @@
 
   /* 더보기 안의 화면들. body() = 보여줄 글, wire() = 버튼 연결 */
   const MORE_PAGES = {
-    /* 🎤 이 폰은 누구 폰 */
+    /* 🎤 이 폰은 누구 폰 — 고르기 · 새로 만들기 · 이름 고치기 · (녹음 없는 자리만) 지우기 */
     who: {
       body: () => `
         <h2>이 폰은 누구 폰? 🎤</h2>
-        <p>여기서 새로 녹음하면 <b>${getMyVoice() ? VOICE_LABEL[getMyVoice()] : "아직 안 정함"}</b> 목소리로 담겨요.
-        엄마·아빠가 각자 폰에 정해 두면, 백업을 주고받아도 <b>서로 덮어쓰지 않아요.</b></p>
-        <div class="who">
-          <button class="who-b ${getMyVoice() === "mom" ? "on" : ""}" type="button" data-mv="mom">👩 엄마 폰</button>
-          <button class="who-b ${getMyVoice() === "dad" ? "on" : ""}" type="button" data-mv="dad">👨 아빠 폰</button>
-        </div>
-        <p class="hint">※ 이야기마다 따로 고르는 것도 그대로 돼요(녹음 화면 위 👩/👨).</p>`,
+        <p>여기서 새로 녹음하면 <b class="who-now">${getMyVoice() ? escapeHtml(voiceLabel(getMyVoice())) : "아직 안 정함"}</b> 목소리로 담겨요.
+        폰마다 다른 자리를 정해 두면, 백업을 주고받아도 <b>서로 덮어쓰지 않아요.</b></p>
+        <div class="who">${whoButtons(getMyVoice())}${addVoiceHtml()}</div>
+        ${customVoices().length ? `<ul class="who-list">${customVoices().map((c) =>
+          `<li data-row="${c.id}"><span class="who-nm">${CUSTOM_ICON} ${escapeHtml(c.name || CUSTOM_FALLBACK)}</span>
+             <button class="who-mini" type="button" data-ren="${c.id}">✏️ 이름</button>
+             <button class="who-mini del" type="button" data-del="${c.id}" hidden>🗑 지우기</button></li>`).join("")}</ul>
+          <p class="hint">🗑 는 <b>녹음이 하나도 없는 자리</b>에만 나와요. 녹음이 있는 자리는 실수로 지워지지 않게 감춰 둡니다.</p>` : ""}
+        <p class="hint">※ 이야기마다 따로 고르는 것도 그대로 돼요(녹음 화면 위 탭).</p>`,
       wire: () => {
-        modalBody.querySelectorAll("[data-mv]").forEach((b) => b.addEventListener("click", () => {
-          setMyVoice(b.dataset.mv);
-          modalBody.querySelectorAll("[data-mv]").forEach((x) => x.classList.toggle("on", x === b));
-          const p = modalBody.querySelector("p"); if (p) p.innerHTML = p.innerHTML.replace(/<b>.*?<\/b>/, `<b>${VOICE_LABEL[b.dataset.mv]}</b>`);
-          toast(`이 폰은 ${VOICE_LABEL[b.dataset.mv]} 폰이에요 🎤`);
+        const refresh = () => openMorePage("who");
+        modalBody.querySelectorAll(".who-b[data-v]").forEach((b) => b.addEventListener("click", () => {
+          setMyVoice(b.dataset.v);
+          modalBody.querySelectorAll(".who-b[data-v]").forEach((x) => x.classList.toggle("on", x === b));
+          const now = modalBody.querySelector(".who-now");
+          if (now) now.textContent = voiceLabel(b.dataset.v);
+          toast(`이 폰은 ${voicePhone(b.dataset.v)}이에요 🎤`);
         }));
+        wireAddVoice(modalBody, (id) => { setMyVoice(id); toast(`이 폰은 ${voicePhone(id)}이에요 🎤`); refresh(); });
+        modalBody.querySelectorAll("[data-ren]").forEach((b) => b.addEventListener("click", () => {
+          const id = b.dataset.ren;
+          const nm = prompt("이 자리의 이름을 적어 주세요", voiceLabel(id));
+          if (nm === null) return;
+          const t = nm.trim();
+          if (!t) { toast("이름을 적어 주세요"); return; }
+          renameVoice(id, t);
+          toast("이름을 바꿨어요 ✏️");
+          refresh();
+        }));
+        modalBody.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+          const id = b.dataset.del;
+          if (!confirm(`'${voiceLabel(id)}' 자리를 목록에서 지울까요?`)) return;
+          if (getMyVoice() === id) setMyVoice(DEFAULT_VOICE);
+          removeVoice(id);
+          toast("자리를 지웠어요");
+          refresh();
+        }));
+        /* 녹음이 하나도 없는 자리에만 🗑 를 보여준다(저장소를 읽어야 알 수 있어 나중에 켠다) */
+        loadProgress().then((prog) => {
+          const used = {};
+          Object.keys(prog).forEach((sid) => {
+            Object.keys(prog[sid].v).forEach((v) => { if (prog[sid].v[v].size) used[v] = 1; });
+            Object.keys(prog[sid].old).forEach((v) => (used[v] = 1));
+          });
+          modalBody.querySelectorAll("[data-del]").forEach((b) => { if (!used[b.dataset.del]) b.hidden = false; });
+        }, () => {});
       },
     },
 
@@ -1753,7 +1941,6 @@
   $("pickHome").addEventListener("click", showHome);
   $("recHome").addEventListener("click", showHome);
   $("recBack").addEventListener("click", showPick);
-  document.querySelectorAll(".vtab").forEach((t) => t.addEventListener("click", () => setVoice(t.dataset.voice)));
   $("playHome").addEventListener("click", (e) => { e.stopPropagation(); showHome(); });
   $("modalClose").addEventListener("click", closeModal);
   modalBackBtn.addEventListener("click", modalGoBack);
