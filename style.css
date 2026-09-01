@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v49";
+  --v: "v50";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
@@ -430,6 +430,8 @@ body.no-moon .moon { display: none; }
 }
 .mrow .mc { flex: none; color: var(--muted); font-size: 20px; }
 .mrow.first { background: rgba(240,199,94,.13); border-color: rgba(240,199,94,.4); }
+/* 이미 정해 둔 항목 — 값이 눈에 들어오게 (설정이 날아간 게 아니라는 안심) */
+.mrow.set .mt small { color: #bff0da; }
 .mrow.first .mt small { color: var(--cream-soft); }
 
 /* 상세 화면 맨 아래 "다음은 이거 보세요" 한 줄 */
