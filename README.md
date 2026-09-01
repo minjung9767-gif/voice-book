@@ -12,11 +12,12 @@
 - 다시 녹음 / 파일로 내려받기(안전 사본) / 불러오기 / 지우기
 
 ## 공개 주소
-- **정식 주소 (Netlify, 공유용):** https://voice-book.netlify.app/
-- (참고) GitHub Pages 백업 주소: `https://minjung9767-gif.github.io/voice-book/`
+- ⭐ **https://minjung9767-gif.github.io/voice-book/** (GitHub Pages) — **이 주소 하나뿐이다.**
 
-두 주소 모두 이 저장소 `main` 브랜치에 반영되면 자동으로 새로 배포된다.
-사람들에게 공유할 때는 **Netlify 주소**를 쓴다(계정 이름·저장소 이름이 안 드러남).
+`main` 브랜치에 반영되면 자동으로 새로 배포된다(`.github/workflows/deploy-pages.yml`).
+
+> 넷리파이(`voice-book.netlify.app`)는 처음에 써 보다가 **안 쓰기로 했다**(무료 크레딧 소진으로 v18에서 멈춤).
+> 그 주소는 옛 화면만 보이므로 **공유하지 말 것.** 저장소의 `netlify.toml` 은 기록으로만 남겨 둔다.
 
 폰에서 열고 **"홈 화면에 추가"** 하면 앱 아이콘처럼 쓸 수 있다.
 
