@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v46";
+  --v: "v47";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
@@ -132,6 +132,9 @@ body.no-moon .moon { display: none; }
 .gvoice.dad { color: #cfe6ff; background: rgba(140,190,255,.16); border-color: rgba(140,190,255,.32); }
 .spill.voice { color: #ffd7e2; background: rgba(255,150,180,.14); border-color: rgba(255,150,180,.3); }
 .spill.voice.dad { color: #cfe6ff; background: rgba(140,190,255,.14); border-color: rgba(140,190,255,.32); }
+/* 직접 만든 자리(엄마 폰2·아기방 폰 …) — 엄마·아빠와 한눈에 구분되게 초록빛 */
+.gvoice.etc { color: #c7f0dc; background: rgba(130,220,180,.16); border-color: rgba(130,220,180,.32); }
+.spill.voice.etc { color: #c7f0dc; background: rgba(130,220,180,.14); border-color: rgba(130,220,180,.32); }
 .gtodo {
   font-size: 12.5px; line-height: 1; color: var(--muted); white-space: nowrap;
   background: rgba(255,255,255,.09); border-radius: 999px; padding: 4px 10px; margin-top: -2px;
@@ -271,6 +274,13 @@ body.no-moon .moon { display: none; }
 }
 .voices { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .voices-q { font-size: 14px; color: var(--muted); }
+/* 자리가 여러 개면 한 줄에 다 안 들어간다 → 옆으로 밀어서 볼 수 있게 */
+.vtabs {
+  display: flex; gap: 8px; max-width: 100%; overflow-x: auto; padding: 2px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.vtabs::-webkit-scrollbar { display: none; }
+.vtab { flex: 0 0 auto; }
 .vtab {
   font-family: inherit; font-size: 15px; padding: 6px 15px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--glass-brd); background: var(--glass); color: var(--cream-soft); transition: all .15s ease;
@@ -460,13 +470,29 @@ body.no-moon .moon { display: none; }
 .plan .n { font-family: "Jua", sans-serif; font-size: 19px; color: var(--gold); white-space: nowrap; }
 .plan li.zero { opacity: .5; }
 .plan li.zero .n { color: var(--muted); }
-.who { display: flex; gap: 10px; margin: 10px 0 4px; }
+.who { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 4px; }
 .who-b {
-  flex: 1; font-family: inherit; font-size: 17px; padding: 14px 10px; border-radius: 16px; cursor: pointer;
+  flex: 1 1 40%; min-width: 130px; font-family: inherit; font-size: 17px; padding: 14px 10px;
+  border-radius: 16px; cursor: pointer;
   border: 1px solid var(--glass-brd); background: var(--glass); color: var(--cream);
 }
 .who-b.on { background: var(--gold); border-color: var(--gold); color: #3a2f10; }
 .who-b:active { transform: scale(.97); }
+.who-b.who-add { border-style: dashed; color: var(--cream-soft); }
+.who-new { flex: 1 1 100%; }
+.who-new .text-input { margin-bottom: 8px; }
+/* 직접 만든 자리 목록 (이름 고치기 · 지우기) */
+.who-list { list-style: none; margin: 12px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.who-list li {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--glass-brd);
+}
+.who-nm { flex: 1; font-size: 15px; color: var(--cream); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-mini {
+  font-family: inherit; font-size: 13px; padding: 6px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--glass-brd); background: var(--glass); color: var(--cream-soft);
+}
+.who-mini.del { color: #ffc9c9; border-color: rgba(255,150,150,.3); }
 
 .field-label { display: block; font-size: 15px; color: var(--cream-soft); margin: 14px 0 6px; }
 .text-input, .text-area {

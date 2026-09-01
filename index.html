@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" data-v="v46">
+<html lang="ko" data-v="v47">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -8,7 +8,7 @@
   <title>별밤책 🌙</title>
 
   <!-- PWA / 홈화면 추가 -->
-  <link rel="manifest" href="manifest.webmanifest?v=46" />
+  <link rel="manifest" href="manifest.webmanifest?v=47" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Dongle:wght@700&family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=46" />
+  <link rel="stylesheet" href="style.css?v=47" />
 </head>
 <body>
   <!-- 밤하늘 배경 (모든 화면 공통) -->
@@ -89,8 +89,7 @@
       </div>
       <div class="voices" role="tablist" aria-label="누구 목소리인지 고르기">
         <span class="voices-q">누구 목소리?</span>
-        <button class="vtab" data-voice="mom" role="tab">👩 엄마</button>
-        <button class="vtab" data-voice="dad" role="tab">👨 아빠</button>
+        <div class="vtabs" id="vtabs"></div>
       </div>
       <div id="recProg" class="prog"></div>
       <p id="legacyNote" class="legacy-note" hidden></p>
@@ -140,8 +139,8 @@
   <!-- 토스트 -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="scripts-data.js?v=46"></script>
-  <script src="analytics.js?v=46"></script>
-  <script src="app.js?v=46"></script>
+  <script src="scripts-data.js?v=47"></script>
+  <script src="analytics.js?v=47"></script>
+  <script src="app.js?v=47"></script>
 </body>
 </html>
