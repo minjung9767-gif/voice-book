@@ -116,7 +116,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v50";
+  const APP_VERSION = "v51";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -687,9 +687,37 @@
       rec.histMap[idx] = (rec.histMap[idx] || 0) + 1;
     }
   }
+  /* ===== 장면 그림 =====
+   * scene.img 가 있으면 그림 파일을, 없으면 예전처럼 이모지(scene.emoji)를 보여준다.
+   * → 아직 그림을 안 만든 이야기는 아무것도 바뀌지 않는다.
+   * 그림을 못 불러오면(파일 누락·경로 오타) 조용히 이모지로 되돌린다 → 화면이 텅 비지 않게. */
+  function showArt(el, sc) {
+    if (!sc || !sc.img) {
+      el.classList.remove("has-img");
+      el.textContent = (sc && sc.emoji) || "";
+      return;
+    }
+    el.classList.add("has-img");
+    el.textContent = "";
+    const im = document.createElement("img");
+    im.alt = "";
+    im.decoding = "async";
+    im.addEventListener("error", () => {
+      el.classList.remove("has-img");
+      el.textContent = sc.emoji || "";
+    });
+    im.src = sc.img;
+    el.appendChild(im);
+  }
+  /* 다음 장면 그림을 미리 받아 둔다 → 넘어갈 때 그림이 잠깐 비지 않게 */
+  function preloadNextArt(story, i) {
+    const nx = story && story.scenes && story.scenes[i + 1];
+    if (nx && nx.img) new Image().src = nx.img;
+  }
   function paintRecScene(anim) {
     const sc = rec.story.scenes[rec.scene];
-    recArtEl.textContent = sc.emoji;
+    showArt(recArtEl, sc);
+    preloadNextArt(rec.story, rec.scene);
     recTextEl.innerHTML = sc.lines.map((l) => `<span class="ln">${renderName(l)}</span>`).join("");
     if (anim) [recArtEl, recTextEl].forEach((el) => { el.classList.remove("scene-in"); void el.offsetWidth; el.classList.add("scene-in"); });
   }
@@ -1030,12 +1058,14 @@
   function clearNextTimer() { if (pb.nextTimer) { clearTimeout(pb.nextTimer); pb.nextTimer = null; } }
   function paintPlayScene(anim) {
     if (pb.mode === "legacy") {
+      playArtEl.classList.remove("has-img");
       playArtEl.textContent = pb.story.cover;
       playTextEl.innerHTML = `<span class="ln">${escapeHtml(pb.story.title)}</span>` +
         `<span class="ln" style="font-size:15px;opacity:.7">예전 녹음</span>`;
     } else {
       const sc = pb.story.scenes[pb.scene];
-      playArtEl.textContent = sc.emoji;
+      showArt(playArtEl, sc);
+      preloadNextArt(pb.story, pb.scene);
       playTextEl.innerHTML = sc.lines.map((l) => `<span class="ln">${renderName(l)}</span>`).join("");
     }
     if (anim) [playArtEl, playTextEl].forEach((el) => { el.classList.remove("scene-in"); void el.offsetWidth; el.classList.add("scene-in"); });
