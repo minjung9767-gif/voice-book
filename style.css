@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v51";
+  --v: "v52";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
@@ -236,6 +236,26 @@ body.no-moon .moon { display: none; }
   padding: 2vh 5vw; text-align: center; min-height: 0;
 }
 .art { font-size: clamp(4.2rem, 20vmin, 9rem); line-height: 1.1; filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
+/* 장면에 그림 파일이 있을 때 — 이모지 대신 정사각형 그림을 크게 띄운다.
+ * 세로(vh) 기준으로 크기를 잡는 이유: 그림 아래에 문장과 진행 점이 있어서,
+ * 가로 기준으로만 잡으면 세로가 짧은 화면(폰 가로)에서 글이 잘린다. */
+.art.has-img {
+  font-size: 0; line-height: 0; filter: none;
+  width: min(50vh, 64vw); max-width: 520px; aspect-ratio: 1 / 1;
+  /* 자리가 모자라면 그림이 먼저 줄어든다 → 문장이나 아래 버튼을 밀어내지 않게.
+     단 min-height 까지만 줄어든다 — 안 그러면 세로가 아주 짧은 화면(폰 가로)에서
+     그림이 0 이 되어 아예 사라진다. */
+  flex: 0 1 auto; min-height: min(26vh, 64vw);
+  display: flex; align-items: center; justify-content: center;
+}
+.art.has-img img {
+  display: block;
+  height: 100%; width: auto; max-width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: clamp(14px, 2.4vmin, 26px);
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
 .text { max-width: 640px; }
 .ln {
   display: block; font-size: clamp(1.05rem, 4.5vmin, 1.5rem); line-height: 1.65;
