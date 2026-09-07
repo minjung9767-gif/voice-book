@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v52";
+  --v: "v53";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
@@ -241,7 +241,7 @@ body.no-moon .moon { display: none; }
  * 가로 기준으로만 잡으면 세로가 짧은 화면(폰 가로)에서 글이 잘린다. */
 .art.has-img {
   font-size: 0; line-height: 0; filter: none;
-  width: min(50vh, 64vw); max-width: 520px; aspect-ratio: 1 / 1;
+  width: min(64vh, 92vw); max-width: 620px; aspect-ratio: 1 / 1;
   /* 자리가 모자라면 그림이 먼저 줄어든다 → 문장이나 아래 버튼을 밀어내지 않게.
      단 min-height 까지만 줄어든다 — 안 그러면 세로가 아주 짧은 화면(폰 가로)에서
      그림이 0 이 되어 아예 사라진다. */
@@ -255,6 +255,13 @@ body.no-moon .moon { display: none; }
   object-fit: cover;
   border-radius: clamp(14px, 2.4vmin, 26px);
   box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+/* 들려주기 화면(아기용)은 아래에 버튼이 없어서 빈자리가 많이 남는다.
+   아래쪽에 빈 여백을 두어 그림·문장 덩어리를 화면 위쪽으로 올린다.
+   위쪽 여백은 왼쪽 위 홈 버튼과 그림이 붙지 않을 만큼은 남겨 둔다.
+   세로가 짧은 화면(폰 가로)에는 남는 자리가 없으므로 그대로 가운데 둔다. */
+@media (min-height: 600px) {
+  .play-screen .stage { padding-top: max(2vh, 62px); padding-bottom: 24vh; }
 }
 .text { max-width: 640px; }
 .ln {
