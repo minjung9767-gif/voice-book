@@ -116,7 +116,7 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v50";
+  const APP_VERSION = "v51";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -496,6 +496,29 @@
     return "";
   }
   function blobToDataURL(b) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); }); }
+
+  /* ===== 백업 파일 압축(gzip) — v51 =====
+   * 백업은 소리를 글자로 바꿔서(base64) 담기 때문에 원래보다 1.33배로 부푼다.
+   * gzip 으로 다시 묶으면 그 부푼 만큼이 도로 빠진다 → 약 4분의 1 (54MB → 41MB).
+   * 소리 자체는 하나도 안 건드리므로 **음질 손실이 전혀 없다.**
+   * 옛 폰(사파리 16.4 미만 · 크롬 80 미만)에는 이 기능이 없다 → 그럴 땐 예전처럼 압축 없이 간다. */
+  const canGzip = () => typeof window.CompressionStream === "function";
+  /* 큰 파일을 한 덩어리로 들고 있지 않도록 조각조각 흘려 보낸다(폰 메모리 아끼기) */
+  async function pipeBlob(blob, stream, type) {
+    const reader = blob.stream().pipeThrough(stream).getReader(), parts = [];
+    for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); }
+    return new Blob(parts, { type });
+  }
+  async function gzipBlob(blob) {
+    try { return await pipeBlob(blob, new CompressionStream("gzip"), "application/gzip"); }
+    catch (e) { return null; }
+  }
+  function gunzipBlob(blob) { return pipeBlob(blob, new DecompressionStream("gzip"), "application/json"); }
+  /* 파일 맨 앞 두 글자가 1f 8b 면 gzip 으로 묶인 파일이다 (이름이 뭐든 내용으로 알아본다) */
+  async function isGzipped(file) {
+    try { const b = new Uint8Array(await file.slice(0, 2).arrayBuffer()); return b[0] === 0x1f && b[1] === 0x8b; }
+    catch (e) { return false; }
+  }
   function downloadBlob(blob, name) {
     const url = URL.createObjectURL(blob), a = document.createElement("a");
     a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
@@ -1182,15 +1205,21 @@
     const d = new Date(), z = (n) => (n < 10 ? "0" + n : String(n));
     return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
   }
-  const backupTypes = () => [
-    { name: `별밤책-백업-${todayStamp()}.json`, type: "application/json" },
-    { name: `별밤책-백업-${todayStamp()}.txt`, type: "text/plain" },
-  ];
-  function pickShareFile(blob) {
+  const backupTypes = () => {
+    const s = todayStamp(), list = [];
+    if (canGzip()) list.push({ name: `별밤책-백업-${s}.json.gz`, type: "application/gzip", gzip: true });
+    list.push({ name: `별밤책-백업-${s}.json`, type: "application/json" });
+    list.push({ name: `별밤책-백업-${s}.txt`, type: "text/plain" });
+    return list;
+  };
+  /* 어떤 종류로 내보낼지를 **큰 파일을 만들기 전에** 정한다.
+   * canShare 는 파일 크기가 아니라 '종류'만 보므로, 1바이트짜리 가짜 파일로 미리 물어보면 된다.
+   * → 압축본을 만들었다가 "이 종류는 못 보낸다"는 답을 듣고 헛수고하는 일이 없다. */
+  function pickType() {
     for (const t of backupTypes()) {
       try {
-        const f = new File([blob], t.name, { type: t.type });
-        if (!navigator.canShare || navigator.canShare({ files: [f] })) return f;
+        const f = new File([new Uint8Array(1)], t.name, { type: t.type });
+        if (!navigator.canShare || navigator.canShare({ files: [f] })) return t;
       } catch (e) {}
     }
     return null;
@@ -1212,9 +1241,20 @@
        * (없는 예전 백업도 그대로 받는다 — 그때는 이름 없이 '다른 폰'으로 보인다) */
       const payload = { app: "별밤책", kind: "scene-clips", version: 4, exportedAt: Date.now(),
                         voices: customVoices(), clips };
-      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-      const file = pickShareFile(blob);
-      backupReady = { file, blob, name: (file && file.name) || backupTypes()[0].name, count: clips.length, bytes: blob.size };
+      let blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      const types = backupTypes();
+      let t = pickType() || types[0];
+      if (t.gzip) {
+        const gz = await gzipBlob(blob);
+        if (gz) blob = gz;                                  // 압축 성공 → 원본은 여기서 버려진다(메모리 절약)
+        else t = types.find((x) => !x.gzip) || t;           // 압축이 안 되면 예전 방식 그대로
+      }
+      let file = null;
+      try {
+        const f = new File([blob], t.name, { type: t.type });
+        if (!navigator.canShare || navigator.canShare({ files: [f] })) file = f;
+      } catch (e) {}
+      backupReady = { file, blob, name: t.name, count: clips.length, bytes: blob.size };
     } catch (e) { backupReady = null; }
     finally { backupBuilding = false; updateBackupHint(); }
   }
@@ -1227,11 +1267,14 @@
       return;
     }
     const mb = backupReady.bytes ? " · 약 " + Math.max(1, Math.round(backupReady.bytes / 1048576)) + "MB" : "";
-    /* 파일이 크면 폰이 카톡 공유창을 못 띄우는 일이 있다 → 미리 '파일로 저장하기'를 권한다 */
+    /* 🚨 파일이 크면 '앱으로 바로 보내기'가 통째로 실패한다 — 민정 제보(v51).
+     * 노션은 빈 파일만 올라갔고, 구글 드라이브는 "폴더 콘텐츠를 표시할 수 없습니다" 가 떴다.
+     * 받는 앱이 공유창에서 열리는 작은 방(공유 확장) 안에서 큰 파일을 못 감당해서 벌어진다.
+     * → 서비스별로 이유를 설명하지 말고, **'먼저 저장하고, 그 파일을 올려라'** 한 가지 길만 알려준다. */
     const big = backupReady.bytes > 20 * 1048576
-      ? "<br><b>파일이 커요.</b> 공유창이 막히면 아래 <b>📁 폰에 바로 저장하기</b> 를 쓰세요."
+      ? "<br>⚠️ <b>파일이 커요.</b> 카톡·노션·드라이브로 <b>바로 보내면 빈 파일</b>이 갈 수 있어요 — <b>먼저 저장</b>한 뒤, 그 파일을 올려주세요."
       : "";
-    h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음을 보낼 수 있어요" + mb + "." + big;
+    h.innerHTML = "준비 완료 — <b>" + backupReady.count + "개</b> 녹음" + mb + "." + big;
   }
   // 카톡/메일/드라이브 등으로 보내기. 공유창을 버튼 클릭 '즉시' 띄운다(중간 await 없음).
   async function sendBackup() {
@@ -1312,6 +1355,7 @@
              그래도 없으면 위의 <b>🛟 백업 파일 내보내기</b> 로 저장해 주세요 — 저장할 곳을 직접 고를 수 있어요.</p>`
           : `<p><b>‘내 파일’ 앱 → 다운로드</b> 폴더에 있어요.</p>
              <p class="hint">📂 안 보이면 위의 <b>🛟 백업 파일 내보내기</b> 로 저장할 곳을 직접 골라 주세요.</p>`}
+        <p class="hint">✅ 이 파일을 드라이브·노션에 올렸다면, 올린 뒤 <b>크기가 0KB가 아닌지</b> 한 번만 확인해 주세요.</p>
         <button class="modal-btn gold" id="swOk" type="button">알겠어요</button>
       </div>`);
     const ok = $("swOk"); if (ok) ok.addEventListener("click", closeModal);
@@ -1338,7 +1382,9 @@
              </ol>`
           : `<p>공유창이 뜨지 않아서 <b>별밤책-백업</b> 파일을 폰에 저장했어요.
              <b>백업은 제대로 됐어요</b> — 파일은 <b>“파일” 앱</b>(안드로이드는 <b>다운로드</b> 폴더)에 있어요.</p>
-             <p>이 파일을 <b>드라이브·카톡 나에게·메일</b> 처럼 다시 찾기 쉬운 곳에도 한 벌 두시면 더 안심이에요.</p>
+             <p>이 파일을 <b>드라이브·카톡 나에게</b> 처럼 다시 찾기 쉬운 곳에도 한 벌 두시면 더 안심이에요.
+             <b>그 앱을 열어서 이 파일을 올리는</b> 방식으로요 — 공유창으로 바로 보내면 빈 파일이 갈 수 있어요.</p>
+             <p class="hint">✅ 올린 뒤에는 <b>크기가 0KB가 아닌지</b> 한 번만 확인해 주세요.</p>
              <details class="fold">
                <summary>💬 카톡 ‘나에게’로 보내려면</summary>
                <ol class="steps-big">
@@ -1409,7 +1455,18 @@
   async function restoreFromFile(file) {
     if (!file) return;
     let payload = null;
-    try { payload = JSON.parse(await file.text()); }
+    /* 압축된 백업(.json.gz)도, 예전 그대로인 백업(.json·.txt)도 둘 다 받는다.
+     * 이름이 아니라 **내용 앞 두 글자**로 알아보므로, 파일 이름이 바뀌어 있어도 괜찮다. */
+    try {
+      let src = file;
+      if (await isGzipped(file)) {
+        if (typeof window.DecompressionStream !== "function") {
+          toast("이 폰에서는 압축된 백업을 열 수 없어요. 폰을 최신으로 업데이트해 주세요"); return;
+        }
+        src = await gunzipBlob(file);
+      }
+      payload = JSON.parse(await src.text());
+    }
     catch (e) { toast("백업 파일을 읽지 못했어요 (파일을 확인해 주세요)"); return; }
     // 지금 방식(clips) + 예전 방식(recordings) 백업 파일 둘 다 받는다
     const list = payload && (Array.isArray(payload.clips) ? payload.clips
@@ -1767,40 +1824,45 @@
         <h2>녹음 백업하기 🛟</h2>
         <p>녹음은 이 기기 안에만 있어요. <b>백업 파일 하나</b>로 내보내 두면,
         폰을 바꾸거나 실수로 지워져도 그 파일로 <b>되살릴 수 있어요.</b></p>
-        <button class="modal-btn gold" id="doBackup" type="button">🛟 백업 파일 내보내기</button>
-        <p class="hint">누르면 <b>공유창</b>이 떠요. 아래 어디에 두어도 괜찮아요 —
-        <b>내가 다시 찾을 수 있는 곳</b>이면 돼요.</p>
-        <ul class="dest">
-          <li><span>📁</span><span><b>파일 앱</b><br/>안드로이드는 ‘내 파일’</span></li>
-          <li><span>☁️</span><span><b>드라이브</b><br/>아이클라우드·구글</span></li>
-          <li><span>💬</span><span><b>카톡 나에게</b><br/>보내기 쉬움</span></li>
-          <li><span>✉️</span><span><b>메일</b><br/>나에게 보내기</span></li>
-        </ul>
-        <button class="modal-btn ghost" id="saveBackup" type="button">📁 폰에 바로 저장하기</button>
-        ${isIOS && isStandalone()
-          ? `<p class="hint">※ <b>홈 화면 앱</b>에서는 ‘바로 저장’이 막혀 있어요 —
-             위 <b>🛟 내보내기</b> 로 <b>“파일에 저장”</b> 을 골라 주세요.</p>` : ""}
+        ${isIOS
+          ? `<button class="modal-btn gold" id="doBackup" type="button">🛟 백업 파일 내보내기</button>
+             <ol class="steps-big">
+               <li><span>공유창이 뜨면 <b>“파일에 저장”</b> 을 고르세요
+                 <span class="sub">맨 윗줄 앱 아이콘(카톡·노션)이 아니라 <b>아래쪽 목록</b>에 있어요</span></span></li>
+               <li><span><b>iCloud Drive</b> 를 고르고 오른쪽 위 <b>저장</b>
+                 <span class="sub">여기까지 하면 <b>백업 끝</b>이에요</span></span></li>
+             </ol>
+             ${isStandalone() ? "" : `<button class="modal-btn ghost" id="saveBackup" type="button">📁 폰에 바로 저장하기</button>`}`
+          : `<button class="modal-btn gold" id="saveBackup" type="button">📁 폰에 바로 저장하기</button>
+             <ol class="steps-big">
+               <li><span>누르면 <b>다운로드 폴더</b>에 저장돼요
+                 <span class="sub">여기까지 하면 <b>백업 끝</b>이에요</span></span></li>
+               <li><span>드라이브·카톡에도 두려면, <b>그 앱에서 이 파일을 올려</b> 주세요
+                 <span class="sub">‘내 파일’ 앱 → <b>다운로드</b> 에 있어요</span></span></li>
+             </ol>
+             <button class="modal-btn ghost" id="doBackup" type="button">🛟 공유창으로 내보내기</button>`}
+        <p class="hint" id="backupHint">백업 파일을 준비하고 있어요…</p>
         <label class="check"><input type="checkbox" id="bkHist" ${backupWithHistory ? "checked" : ""} />
         <span>지난 녹음까지 함께 담기 <b>(파일이 커져요)</b></span></label>
-        <p class="hint" id="backupHint">백업 파일을 준비하고 있어요…</p>
-        <p class="hint">💡 <b>여러 폰 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.</p>
         <details class="fold">
-          <summary>💬 카톡으로 보낼 때</summary>
-          <ol class="steps">
-            <li>공유창에서 <b>카카오톡</b> → <b>나에게 보내기</b>(내 채팅방)</li>
-            <li><b>빈 메시지만 갔다면</b> — <b>📁 폰에 바로 저장하기</b> 를 누른 뒤,
-                카톡 <b>나에게</b>에서 <b>＋ → 파일</b> 로 그 파일을 붙여 보내세요</li>
-          </ol>
+          <summary>☁️ 드라이브·노션·카톡에도 한 벌 두려면</summary>
+          <p>위에서 <b>저장한 파일</b>을, <b>그 앱을 열어서 직접 올려</b> 주세요.<br/>
+          (드라이브 앱 → <b>＋ → 업로드</b> · 카톡 <b>나에게 → ＋ → 파일</b>)</p>
+          <p>⚠️ 공유창에서 <b>카톡·노션·드라이브로 바로 보내면</b> 파일이 커서
+          <b>빈 파일로 갈 수 있어요.</b> 꼭 <b>저장부터</b> 해주세요.</p>
+          <p>✅ 올린 뒤에는 <b>파일 크기가 0KB가 아닌지</b> 한 번만 확인해 주세요.</p>
           <p class="hint">※ 카톡에 둔 파일은 <b>시간이 지나면 다시 받지 못할 수 있어요.</b>
           오래 두려면 <b>파일 앱·드라이브</b>에도 한 벌 두세요.</p>
         </details>
+        <p class="hint">💡 <b>여러 폰 팁:</b> 서로 백업 파일을 주고받아 복원하면 <b>상대가 녹음한 이야기까지 한 폰에서</b> 들을 수 있어요.</p>
         <p class="hint">※ <b>카톡·인스타 안</b>에서 열었다면 백업이 안 될 수 있어요. <b>사파리·크롬</b>으로 열어주세요.
         백업은 사진첩이 아니라 <b>파일</b>로 저장돼요.</p>
         ${moreNext("restore", "📥 받은 백업 파일을 합치려면")}`,
       wire: () => {
         $("bkHist").addEventListener("change", (e) => { backupWithHistory = e.target.checked; buildBackup(); });
-        $("doBackup").addEventListener("click", sendBackup);
-        $("saveBackup").addEventListener("click", saveBackupToFile);
+        const bkSend = $("doBackup"), bkSave = $("saveBackup");     // 화면에 없는 버튼도 있다(아이폰 홈 화면 앱)
+        if (bkSend) bkSend.addEventListener("click", sendBackup);
+        if (bkSave) bkSave.addEventListener("click", saveBackupToFile);
         buildBackup();   // 이 화면에 들어올 때만 준비 → 더보기 여는 건 가벼워진다
       },
     },
