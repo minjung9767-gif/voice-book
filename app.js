@@ -116,7 +116,19 @@
   }
   function setMyVoice(v) { try { localStorage.setItem("myVoice", v); } catch (e) {} }
   const myVoice = () => getMyVoice() || DEFAULT_VOICE;
-  const APP_VERSION = "v55";
+
+  /* ===== 그림 보기 방식 (이 폰에만 기억) =====
+   * "img"   = 그림책 — 그림이 있는 장면은 그림으로 (기본)
+   * "emoji" = 언제나 이모지 — 예전 모습 그대로
+   * 녹음·진도와는 아무 상관 없다. 화면에 뭘 보여줄지만 고르는 것. */
+  const ART_MODES = { img: "그림책", emoji: "이모지" };
+  const DEFAULT_ART = "img";
+  function getArtMode() {
+    try { const v = localStorage.getItem("artMode"); return ART_MODES[v] ? v : DEFAULT_ART; } catch (e) { return DEFAULT_ART; }
+  }
+  function setArtMode(v) { try { localStorage.setItem("artMode", ART_MODES[v] ? v : DEFAULT_ART); } catch (e) {} }
+  const artModeLabel = (v) => ART_MODES[v] || ART_MODES[DEFAULT_ART];
+  const APP_VERSION = "v56";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -713,9 +725,10 @@
   /* ===== 장면 그림 =====
    * scene.img 가 있으면 그림 파일을, 없으면 예전처럼 이모지(scene.emoji)를 보여준다.
    * → 아직 그림을 안 만든 이야기는 아무것도 바뀌지 않는다.
-   * 그림을 못 불러오면(파일 누락·경로 오타) 조용히 이모지로 되돌린다 → 화면이 텅 비지 않게. */
+   * 그림을 못 불러오면(파일 누락·경로 오타) 조용히 이모지로 되돌린다 → 화면이 텅 비지 않게.
+   * ⚙️ 더보기에서 '이모지'를 골라 두면 그림이 있어도 이모지만 보여준다. */
   function showArt(el, sc) {
-    if (!sc || !sc.img) {
+    if (!sc || !sc.img || getArtMode() === "emoji") {
       el.classList.remove("has-img");
       el.textContent = (sc && sc.emoji) || "";
       return;
@@ -735,7 +748,12 @@
   /* 다음 장면 그림을 미리 받아 둔다 → 넘어갈 때 그림이 잠깐 비지 않게 */
   function preloadNextArt(story, i) {
     const nx = story && story.scenes && story.scenes[i + 1];
-    if (nx && nx.img) new Image().src = nx.img;
+    if (nx && nx.img && getArtMode() !== "emoji") new Image().src = nx.img;
+  }
+  /* 보기 방식을 바꾸면, 지금 열려 있는 화면의 그림을 바로 갈아 끼운다 */
+  function repaintArt() {
+    if (rec.story) paintRecScene(false);
+    if (pb.story && pb.mode !== "legacy") paintPlayScene(false);
   }
   function paintRecScene(anim) {
     const sc = rec.story.scenes[rec.scene];
@@ -909,7 +927,7 @@
       await pushHistory(key);                        // 예전 녹음을 '지난 녹음'으로 옮겨 둔다 (안 지운다)
       await dbPut({ key, storyId: rec.story.id, voice: rec.voice, scene: rec.scene, blob, mime, createdAt: Date.now() });
       wasComplete = rec.done.size >= sceneCount(rec.story);   // 이번 녹음 '전에' 이미 다 채워져 있었나
-      rec.done.add(rec.scene); track("record_save");
+      rec.done.add(rec.scene); track("record_save"); track("record_save_" + rec.story.id);
       await loadHistMap();
     } catch (e) { toast("저장에 실패했어요 (저장 공간을 확인해 주세요)"); renderRec(false); return; }
     /* 소리가 작게 들어갔으면 알려주고 '그 장면에 그대로' 머문다 → 바로 다시 녹음할 수 있다.
@@ -927,7 +945,10 @@
      * 예전엔 다 차 있기만 하면 매번 띄우고 다음 장면으로도 안 넘어갔다.
      * → 전체를 다시 녹음할 때 장면마다 메시지가 뜨고 ❯ 를 손으로 눌러야 했다(민정 제보, v45).
      * 백업 안내는 홈 아래 "🛟 아직 백업 전이에요" 띠가 따로 해준다. */
-    if (rec.done.size >= N && !wasComplete) { toast("이 이야기를 다 녹음했어요 🎉  백업도 잊지 마세요!"); renderRec(true); return; }
+    if (rec.done.size >= N && !wasComplete) {
+      track("record_done_" + rec.story.id);            // 이 이야기를 끝까지 녹음한 순간(이야기별 통계)
+      toast("이 이야기를 다 녹음했어요 🎉  백업도 잊지 마세요!"); renderRec(true); return;
+    }
     /* 다음 장면으로 — 반드시 '순서대로' 넘어간다.
      * 예전엔 '아직 안 한 장면'으로 건너뛰었는데, 1번을 다시 녹음하면 6번으로 튀어서
      * 2·3번을 이어서 다시 녹음할 수가 없었다. 처음부터 다시 담고 싶을 때 불편했다. */
@@ -1063,7 +1084,7 @@
     pb.scene = 0;
     setScreen(playEl);
     hidePauseOv();
-    playCurrent(); track("play");
+    playCurrent(); track("play"); track("play_" + pb.story.id);   // 전체 횟수 + 이야기별 횟수
   }
   // 한 편이 끝나면 차례표의 다음 편으로. 다 돌면 다시 섞는다(같은 이야기가 연달아 나오지 않게).
   function nextStory() {
@@ -1753,6 +1774,7 @@
             voice ? `지금: ${escapeHtml(voicePhone(voice))}` : "아직 안 정했어요", voice ? "set" : "")}
           ${moreRow("name", "👶", "아기 이름",
             name ? `지금: ${escapeHtml(name)}` : "아직 안 넣었어요", name ? "set" : "")}
+          ${moreRow("art", "🖼", "그림 보기 방식", `지금: ${artModeLabel(getArtMode())}`, "set")}
         </ul>
         ${setUp ? "" : `<ul class="more-menu">
           ${moreRow("howRec", "👋", "처음이세요?", "녹음부터 들려주기까지 차근차근", "first")}
@@ -1847,6 +1869,30 @@
 
     /* 👶 아기 이름 — 홈에서도 쓰는 화면이라 그대로 부른다(뒤로는 더보기로) */
     name: { open: () => openName(openMore) },
+
+    /* 🖼 그림 보기 방식 — 그림책 / 이모지.
+     * 그림을 넣기 전 모습(이모지)을 좋아하는 사람도 있어서 고를 수 있게 했다.
+     * 이 폰에만 기억하고, 녹음에는 아무 영향이 없다. */
+    art: {
+      body: () => `
+        <h2>그림 보기 방식 🖼</h2>
+        <p>이야기를 볼 때 <b>그림</b>을 보여줄지, <b>이모지</b>를 보여줄지 고를 수 있어요.
+        고른 값은 <b>이 폰에만</b> 기억되고, <b>녹음은 그대로</b> 있어요.</p>
+        <div class="who">
+          <button class="who-b ${getArtMode() === "img" ? "on" : ""}" type="button" data-art="img">🖼 그림책</button>
+          <button class="who-b ${getArtMode() === "emoji" ? "on" : ""}" type="button" data-art="emoji">😀 이모지</button>
+        </div>
+        <p class="hint">※ 아직 그림이 없는 이야기는 어느 쪽을 골라도 이모지로 나와요.</p>`,
+      wire: () => {
+        modalBody.querySelectorAll("[data-art]").forEach((b) => b.addEventListener("click", () => {
+          setArtMode(b.dataset.art);
+          modalBody.querySelectorAll("[data-art]").forEach((x) => x.classList.toggle("on", x === b));
+          repaintArt();                      // 뒤에 열려 있는 화면도 바로 바뀌게
+          toast(`${artModeLabel(getArtMode())}으로 보여줄게요 🖼`);
+          track("art_" + getArtMode());
+        }));
+      },
+    },
 
     /* 🛟 백업하기 */
     backup: {
