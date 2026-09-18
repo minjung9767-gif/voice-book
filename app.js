@@ -128,7 +128,7 @@
   }
   function setArtMode(v) { try { localStorage.setItem("artMode", ART_MODES[v] ? v : DEFAULT_ART); } catch (e) {} }
   const artModeLabel = (v) => ART_MODES[v] || ART_MODES[DEFAULT_ART];
-  const APP_VERSION = "v56";
+  const APP_VERSION = "v57";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -166,6 +166,7 @@
   const recArtEl = $("recArt"), recTextEl = $("recText"), legacyNoteEl = $("legacyNote");
   const vtabsEl = $("vtabs");
   const playStageEl = $("playStage"), playArtEl = $("playArt"), playTextEl = $("playText"), pauseOvEl = $("pauseOv");
+  const playPagerEl = $("playPager"), pbPosEl = $("pbPos"), pbPrevEl = $("pbPrev"), pbNextEl = $("pbNext");
   const modalEl = $("modal"), modalBody = $("modalBody"), modalBackBtn = $("modalBack");
   const restoreInput = $("restoreInput"), toastEl = $("toast");
 
@@ -1112,7 +1113,29 @@
       preloadNextArt(pb.story, pb.scene);
       playTextEl.innerHTML = sc.lines.map((l) => `<span class="ln">${renderName(l)}</span>`).join("");
     }
+    renderPlayPager();
     if (anim) [playArtEl, playTextEl].forEach((el) => { el.classList.remove("scene-in"); void el.offsetWidth; el.classList.add("scene-in"); });
+  }
+  /* ===== 들려주기 화면 아래 '이전 / 다음' =====
+   * 목소리가 끝나길 기다리지 않고 장면을 넘겨볼 수 있게 (그림을 확인하고 싶을 때).
+   * 장면마다 녹음한 이야기에서만 나온다 — 예전 통 녹음은 장면이 없어서 넘길 게 없다. */
+  function renderPlayPager() {
+    if (!pb.story || pb.mode === "legacy") { playPagerEl.hidden = true; return; }
+    const N = sceneCount(pb.story);
+    playPagerEl.hidden = false;
+    pbPosEl.textContent = `${pb.scene + 1} / ${N} 장면`;
+    pbPrevEl.disabled = pb.scene <= 0;
+    pbNextEl.disabled = pb.scene >= N - 1;
+  }
+  /* 누르면 그 장면으로 가서 바로 들려준다 (멈춰 있었으면 다시 이어진다) */
+  function goPlayScene(i) {
+    if (!pb.story || pb.mode === "legacy") return;
+    const t = Math.max(0, Math.min(i, sceneCount(pb.story) - 1));
+    if (t === pb.scene) return;
+    clearNextTimer();
+    pb.scene = t;
+    pb.state = "playing";
+    playCurrent();
   }
   /* ===== 재생기는 하나만 쓴다 (화면 꺼도 이어지게) =====
    * 장면마다 `new Audio()` 를 새로 만들면, 아이폰이 "사람이 안 눌렀는데 새로 트는 것"으로 보고
@@ -1205,7 +1228,7 @@
     pb.audio = null;
     if ("mediaSession" in navigator) { try { navigator.mediaSession.playbackState = "paused"; } catch (e) {} }
   }
-  function stopPlayback() { clearNextTimer(); stopPlayAudio(); pb.state = "idle"; hidePauseOv(); }
+  function stopPlayback() { clearNextTimer(); stopPlayAudio(); pb.state = "idle"; hidePauseOv(); playPagerEl.hidden = true; }
 
   function hidePauseOv() { pauseOvEl.hidden = true; pauseOvEl.innerHTML = ""; }
   function showPauseOv(kind) {
@@ -1229,6 +1252,8 @@
   }
   // 무대 탭: 재생 중이면 멈춤. 멈춤 화면의 배경 탭 = 이어보기.
   playStageEl.addEventListener("click", () => { if (pb.state === "playing") pbPause(); });
+  pbPrevEl.addEventListener("click", () => goPlayScene(pb.scene - 1));
+  pbNextEl.addEventListener("click", () => goPlayScene(pb.scene + 1));
   pauseOvEl.addEventListener("click", (e) => { e.stopPropagation(); if (pb.state === "paused") pbResume(); });
 
   /* ================= 전체 백업 / 복원 =================
