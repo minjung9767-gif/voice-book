@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" data-v="v56">
+<html lang="ko" data-v="v57">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -8,7 +8,7 @@
   <title>별밤책 🌙</title>
 
   <!-- PWA / 홈화면 추가 -->
-  <link rel="manifest" href="manifest.webmanifest?v=56" />
+  <link rel="manifest" href="manifest.webmanifest?v=57" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Dongle:wght@700&family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=56" />
+  <link rel="stylesheet" href="style.css?v=57" />
 </head>
 <body>
   <!-- 밤하늘 배경 (모든 화면 공통) -->
@@ -113,6 +113,13 @@
       <div id="playArt" class="art scene-in">🌙</div>
       <div id="playText" class="text scene-in"></div>
     </div>
+    <!-- 아래 이전/다음: 목소리가 끝나길 기다리지 않고 장면을 넘겨볼 수 있다(그림 확인용).
+         무대(playStage) 밖에 두어야 화면 탭(=잠깐 멈춤)과 섞이지 않는다. -->
+    <div id="playPager" class="play-pager" hidden>
+      <button id="pbPrev" class="pnav" type="button" aria-label="이전 장면">❮</button>
+      <span id="pbPos" class="ppos"></span>
+      <button id="pbNext" class="pnav" type="button" aria-label="다음 장면">❯</button>
+    </div>
     <div id="pauseOv" class="pause-ov" hidden></div>
   </section>
 
@@ -139,8 +146,8 @@
   <!-- 토스트 -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="scripts-data.js?v=56"></script>
-  <script src="analytics.js?v=56"></script>
-  <script src="app.js?v=56"></script>
+  <script src="scripts-data.js?v=57"></script>
+  <script src="analytics.js?v=57"></script>
+  <script src="app.js?v=57"></script>
 </body>
 </html>
