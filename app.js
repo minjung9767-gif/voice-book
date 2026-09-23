@@ -128,7 +128,7 @@
   }
   function setArtMode(v) { try { localStorage.setItem("artMode", ART_MODES[v] ? v : DEFAULT_ART); } catch (e) {} }
   const artModeLabel = (v) => ART_MODES[v] || ART_MODES[DEFAULT_ART];
-  const APP_VERSION = "v57";
+  const APP_VERSION = "v58";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
