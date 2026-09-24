@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v60";
+  --v: "v61";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
@@ -270,6 +270,9 @@ body.no-moon .moon { display: none; }
   border-radius: clamp(14px, 2.4vmin, 26px);
   box-shadow: 0 10px 30px rgba(0,0,0,.45);
 }
+/* 그림은 다 받아진 다음에(app.js 가 .ready 를 붙임) 부드럽게 나타난다 */
+.art.has-img img { opacity: 0; transition: opacity .35s ease; }
+.art.has-img img.ready { opacity: 1; }
 /* 들려주기 화면: 위쪽은 왼쪽 위 홈 버튼과 그림이 붙지 않을 만큼 비워 둔다.
    세로가 짧은 화면(폰 가로)은 그림이 가운데라 홈 버튼과 안 겹치므로 그대로 둔다. */
 @media (min-height: 600px) {
