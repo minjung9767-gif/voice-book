@@ -128,7 +128,7 @@
   }
   function setArtMode(v) { try { localStorage.setItem("artMode", ART_MODES[v] ? v : DEFAULT_ART); } catch (e) {} }
   const artModeLabel = (v) => ART_MODES[v] || ART_MODES[DEFAULT_ART];
-  const APP_VERSION = "v60";
+  const APP_VERSION = "v61";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -743,13 +743,30 @@
       el.classList.remove("has-img");
       el.textContent = sc.emoji || "";
     });
+    // 그림이 다 받아진 다음에 부드럽게 나타나게 한다(빈 칸이 먼저 떴다가 그림이 툭 들어오지 않게).
+    // 이미 받아 둔 그림이면 기다리지 않고 바로 보인다.
+    im.addEventListener("load", () => im.classList.add("ready"));
     im.src = sc.img;
+    if (im.complete && im.naturalWidth) im.classList.add("ready");
     el.appendChild(im);
   }
-  /* 다음 장면 그림을 미리 받아 둔다 → 넘어갈 때 그림이 잠깐 비지 않게 */
-  function preloadNextArt(story, i) {
-    const nx = story && story.scenes && story.scenes[i + 1];
-    if (nx && nx.img && getArtMode() !== "emoji") new Image().src = nx.img;
+  /* 이야기를 열면 그 이야기의 그림을 한꺼번에 미리 받아 둔다 → 장면을 빨리 넘겨도 그림이 바로 뜬다.
+   * 지금 장면 다음 것부터 차례로 받는다. 받아 둔 그림(Image)은 이야기가 바뀔 때까지 붙잡아 둬서
+   * 브라우저가 중간에 버리지 않게 한다. 한 번 받은 그림은 sw.js 가 기기에 저장해 두므로
+   * 다음에 앱을 열 때는 인터넷을 기다리지 않는다. */
+  let artPreload = { id: null, imgs: [] };
+  function preloadStoryArt(story, i) {
+    if (!story || !story.scenes || getArtMode() === "emoji") return;
+    if (artPreload.id === story.id) return;             // 이미 받는 중이거나 받아 둠
+    const order = story.scenes.slice(i + 1).concat(story.scenes.slice(0, i + 1));
+    artPreload = { id: story.id, imgs: [] };
+    order.forEach((sc) => {
+      if (!sc.img) return;
+      const im = new Image();
+      im.decoding = "async";
+      im.src = sc.img;
+      artPreload.imgs.push(im);
+    });
   }
   /* 보기 방식을 바꾸면, 지금 열려 있는 화면의 그림을 바로 갈아 끼운다 */
   function repaintArt() {
@@ -759,7 +776,7 @@
   function paintRecScene(anim) {
     const sc = rec.story.scenes[rec.scene];
     showArt(recArtEl, sc);
-    preloadNextArt(rec.story, rec.scene);
+    preloadStoryArt(rec.story, rec.scene);
     recTextEl.innerHTML = sc.lines.map((l) => `<span class="ln">${renderName(l)}</span>`).join("");
     if (anim) [recArtEl, recTextEl].forEach((el) => { el.classList.remove("scene-in"); void el.offsetWidth; el.classList.add("scene-in"); });
   }
@@ -1110,7 +1127,7 @@
     } else {
       const sc = pb.story.scenes[pb.scene];
       showArt(playArtEl, sc);
-      preloadNextArt(pb.story, pb.scene);
+      preloadStoryArt(pb.story, pb.scene);
       playTextEl.innerHTML = sc.lines.map((l) => `<span class="ln">${renderName(l)}</span>`).join("");
     }
     renderPlayPager();
