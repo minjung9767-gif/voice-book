@@ -3,7 +3,7 @@
   /* 이 파일의 판(버전). app.js 가 이걸 읽어 "index.html·app.js 와 같은 판인지" 확인한다.
      다르면 예전 파일이 섞여 온 것이므로 앱이 스스로 캐시를 비우고 새로 받는다.
      ⚠️ 새 버전을 낼 땐 index.html(data-v) · app.js(APP_VERSION) · sw.js(CACHE) 와 함께 올릴 것. */
-  --v: "v59";
+  --v: "v60";
   --bg1: #232c5e;
   --bg2: #0d1230;
   --cream: #f5f1e6;
@@ -229,44 +229,61 @@ body.no-moon .moon { display: none; }
 .privacy-note b { color: var(--gold); }
 .privacy-note.warn { color: var(--gold); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }  /* 아직 백업 전 — 누르면 백업 화면 */
 
-/* ---------- 무대 (녹음·들려주기 공용): 그림 + 문장 ---------- */
+/* ---------- 무대 (녹음·들려주기 공용): 그림 + 문장 ----------
+ * 🖼 그림 크기·위치 규칙은 여기 한 곳에서만 정한다 — 모든 동화·모든 장면이 같이 쓴다.
+ *  - 그림은 글 길이와 상관없이 늘 같은 크기(--art-size)의 정사각형이다.
+ *    (예전엔 글이 길면 그림이 줄어들어서, 장면마다 그림 크기가 두 배 넘게 달랐다.)
+ *  - 글 칸은 높이를 --text-lines 줄로 고정해 둔다 → 장면이 넘어가도 그림이 위아래로 움찔거리지 않는다.
+ *  - 그림 + 글 덩어리는 무대의 세로 가운데에 놓인다.
+ *  - 크기는 "무대에 들어가는 가장 큰 정사각형"으로 자동 계산된다(화면이 크면 크게, 작으면 작게).
+ *  ⚠️ 동화별·장면별로 그림 크기를 따로 정하지 말 것. 바꾸고 싶으면 아래 변수만 고친다. */
 .stage {
+  --ln-size: clamp(1.05rem, 4.5vmin, 1.5rem);   /* 문장 글자 크기 */
+  --ln-gap: 5px;                                  /* 문장 사이 간격 */
+  --text-lines: 6;                                /* 글 칸에 미리 잡아 둘 줄 수 (폰: 세로 화면은 글이 잘 접힌다) */
+  --text-box: calc(var(--text-lines) * (var(--ln-size) * 1.65 + var(--ln-gap)));
+  --art-gap: 20px;                                /* 그림과 글 사이 */
+  --art-max: 560px;                               /* 그림이 아무리 커져도 이 이상은 안 커진다 */
+  /* 폴백(아주 옛날 브라우저): 무대 크기를 못 재면 화면 크기로 대신 잡는다 */
+  --art-size: min(var(--art-max), 92vw, 100vh - var(--text-box) - 200px);
   flex: 1; position: relative; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 20px;
-  padding: 2vh 5vw; text-align: center; min-height: 0;
+  align-items: center; justify-content: center; gap: var(--art-gap);
+  padding: 2vh min(4vw, 24px); text-align: center; min-height: 0;
 }
+@supports (container-type: size) {
+  .stage {
+    container-type: size;   /* 무대 자신의 가로·세로(cqw·cqh)를 재서 그림 크기를 정한다 */
+    --art-size: max(120px, min(var(--art-max), 100cqw, 100cqh - var(--text-box) - var(--art-gap)));
+  }
+}
+/* 가로가 넓은 화면(맥북·태블릿)은 한 줄에 글이 많이 들어가서 줄이 덜 바뀐다 → 글 칸을 덜 잡고 그림을 키운다 */
+@media (min-width: 620px) { .stage { --ln-size: clamp(1.05rem, 4.5vmin, 1.35rem); --text-lines: 4.5; } }
 .art { font-size: clamp(4.2rem, 20vmin, 9rem); line-height: 1.1; filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
-/* 장면에 그림 파일이 있을 때 — 이모지 대신 정사각형 그림을 크게 띄운다.
- * 세로(vh) 기준으로 크기를 잡는 이유: 그림 아래에 문장과 진행 점이 있어서,
- * 가로 기준으로만 잡으면 세로가 짧은 화면(폰 가로)에서 글이 잘린다. */
+/* 장면에 그림 파일이 있을 때 — 이모지 대신 정사각형 그림을 띄운다. 크기는 위 --art-size 하나로만 정한다. */
 .art.has-img {
   font-size: 0; line-height: 0; filter: none;
-  width: min(64vh, 92vw); max-width: 620px; aspect-ratio: 1 / 1;
-  /* 자리가 모자라면 그림이 먼저 줄어든다 → 문장이나 아래 버튼을 밀어내지 않게.
-     단 min-height 까지만 줄어든다 — 안 그러면 세로가 아주 짧은 화면(폰 가로)에서
-     그림이 0 이 되어 아예 사라진다. */
-  flex: 0 1 auto; min-height: min(26vh, 64vw);
-  display: flex; align-items: center; justify-content: center;
+  flex: none; width: var(--art-size); height: var(--art-size);
 }
 .art.has-img img {
-  display: block;
-  height: 100%; width: auto; max-width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
+  display: block; width: 100%; height: 100%;
+  object-fit: cover;   /* 혹시 정사각형이 아닌 그림이 들어와도 같은 크기로 잘라서 보여준다 */
   border-radius: clamp(14px, 2.4vmin, 26px);
   box-shadow: 0 10px 30px rgba(0,0,0,.45);
 }
-/* 들려주기 화면(아기용)은 아래에 버튼이 없어서 빈자리가 많이 남는다.
-   아래쪽에 빈 여백을 두어 그림·문장 덩어리를 화면 위쪽으로 올린다.
-   위쪽 여백은 왼쪽 위 홈 버튼과 그림이 붙지 않을 만큼은 남겨 둔다.
-   세로가 짧은 화면(폰 가로)에는 남는 자리가 없으므로 그대로 가운데 둔다. */
+/* 들려주기 화면: 위쪽은 왼쪽 위 홈 버튼과 그림이 붙지 않을 만큼 비워 둔다.
+   세로가 짧은 화면(폰 가로)은 그림이 가운데라 홈 버튼과 안 겹치므로 그대로 둔다. */
 @media (min-height: 600px) {
-  .play-screen .stage { padding-top: max(2vh, 62px); padding-bottom: 24vh; }
+  .play-screen .stage { padding-top: 62px; padding-bottom: 16px; }
 }
-.text { max-width: 640px; }
+/* 글 칸: 높이를 고정해서 그림 위치가 장면마다 흔들리지 않게 한다.
+   글이 아주 길면 칸 아래로 넘쳐 보일 뿐, 그림을 밀거나 줄이지 않는다. */
+.text {
+  flex: none; width: 100%; max-width: 720px;
+  height: var(--text-box); font-size: var(--ln-size);
+}
 .ln {
-  display: block; font-size: clamp(1.05rem, 4.5vmin, 1.5rem); line-height: 1.65;
-  color: var(--cream); text-shadow: 0 2px 8px rgba(0,0,0,.5); word-break: keep-all; margin-bottom: 5px;
+  display: block; font-size: var(--ln-size); line-height: 1.65;
+  color: var(--cream); text-shadow: 0 2px 8px rgba(0,0,0,.5); word-break: keep-all; margin-bottom: var(--ln-gap);
 }
 .ln .nm { color: var(--gold); white-space: nowrap; }
 .scene-in { animation: fadein .7s ease both; }
@@ -582,3 +599,5 @@ body.no-moon .moon { display: none; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 @media (min-width: 620px) { .screen { max-width: 560px; margin: 0 auto; } }
+/* 녹음·들려주기 화면은 조금 더 넓게 → 글이 덜 접혀서 그림을 더 크게 띄울 수 있다 */
+@media (min-width: 820px) { .rec-screen, .play-screen { max-width: 760px; } }
