@@ -128,7 +128,7 @@
   }
   function setArtMode(v) { try { localStorage.setItem("artMode", ART_MODES[v] ? v : DEFAULT_ART); } catch (e) {} }
   const artModeLabel = (v) => ART_MODES[v] || ART_MODES[DEFAULT_ART];
-  const APP_VERSION = "v63";
+  const APP_VERSION = "v64";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -554,9 +554,10 @@
   const NAME_JOSA = { "은": ["은", "는"], "이": ["이", "가"], "을": ["을", "를"] };
   function renderName(text) {
     const name = getBabyName();
-    const shown = name || "아기 이름";
+    const shown = name || "아기";   // 이름을 아직 안 정했으면 "아기야 / 아기는"처럼 자연스럽게
     const stem = name && hasBatchim(name) ? name + "이" : shown;
-    const tag = (word, josa) => '<span class="nm">(' + escapeHtml(word) + ')' + josa + "</span>";
+    // 괄호·색 없이 문장 그대로 읽히게. span은 이름과 조사가 줄바꿈으로 갈라지지 않게만 둔다.
+    const tag = (word, josa) => '<span class="nm">' + escapeHtml(word) + josa + "</span>";
     return text.replace(/\{이름([아은이을]?)\}/g, (m, kind) => {
       if (kind === "아") return tag(shown, hasBatchim(shown) ? "아" : "야");
       if (!kind) return tag(stem, "");
@@ -1332,8 +1333,9 @@
       if (!clips.length) { backupReady = { empty: true, count: 0 }; return; }
       /* voices = 직접 만든 자리의 이름표. 이게 있어야 상대 폰에서도 '아기방 폰'처럼 이름이 보인다.
        * (없는 예전 백업도 그대로 받는다 — 그때는 이름 없이 '다른 폰'으로 보인다) */
+      /* babyName = 아기 이름(기본 정보). 합치는 폰에 이름이 비어 있을 때만 채운다(있으면 그대로 둔다). */
       const payload = { app: "별밤책", kind: "scene-clips", version: 4, exportedAt: Date.now(),
-                        voices: customVoices(), clips };
+                        voices: customVoices(), babyName: getBabyName(), clips };
       let blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
       const types = backupTypes();
       let t = pickType() || types[0];
@@ -1499,6 +1501,7 @@
    *   ③ 넣기 전에 무엇이 늘고/바뀌고/그대로인지 보여주고 확인받는다.
    * 엄마 칸과 아빠 칸은 자리가 다르므로, 서로 백업을 주고받으면 자연히 나란히 합쳐진다. */
   let pendingRestore = null;
+  let pendingBabyName = "";   // 백업에서 넣을 아기 이름(이 폰에 이름이 없을 때만)
 
   function ymd(ms) {
     if (!ms) return "";
@@ -1580,6 +1583,9 @@
       else keep.push(it);
     }
     pendingRestore = add.concat(newer);
+    // 백업에 담겨 온 아기 이름 — 이 폰에 이름이 없을 때만 채운다
+    const bn = payload && typeof payload.babyName === "string" ? payload.babyName.trim().slice(0, 20) : "";
+    pendingBabyName = bn && !getBabyName() ? bn : "";
 
     const when = ymd(payload && payload.exportedAt);
     const row = (icon, text, n) =>
@@ -1593,20 +1599,26 @@
           ${row("🔁", "더 새로 녹음한 걸로 바뀌어요", newer.length)}
           ${row("✅", "내 것이 최신이라 그대로 둬요", keep.length)}
         </ul>
+        ${pendingBabyName ? `<p>👶 아기 이름 <b>${escapeHtml(pendingBabyName)}</b>도 함께 넣어요.</p>` : ""}
         <p class="hint">🔒 지금 갖고 있는 녹음은 <b>지워지지 않아요.</b>
         같은 자리에 둘 다 있으면 <b>더 나중에 녹음한 쪽</b>만 남겨요.</p>
         <button class="modal-btn gold" id="planGo" type="button">
-          ${pendingRestore.length ? `${pendingRestore.length}개 합치기` : "합칠 게 없어요"}
+          ${pendingRestore.length ? `${pendingRestore.length}개 합치기` : (pendingBabyName ? "이름만 넣기" : "합칠 게 없어요")}
         </button>
         <button class="modal-btn ghost" id="planNo" type="button">취소</button>
       </div>`);
-    $("planNo").addEventListener("click", () => { pendingRestore = null; closeModal(); });
+    $("planNo").addEventListener("click", () => { pendingRestore = null; pendingBabyName = ""; closeModal(); });
     $("planGo").addEventListener("click", applyRestore);
   }
 
   async function applyRestore() {
     const list = pendingRestore || [];
     pendingRestore = null;
+    const newName = pendingBabyName; pendingBabyName = "";
+    if (newName && !getBabyName()) {
+      try { localStorage.setItem("babyName", newName); } catch (e) {}
+      updateNameUI(); refreshNameInText();
+    }
     const btn = $("planGo");
     if (btn) { btn.disabled = true; btn.textContent = "합치는 중…"; }
     let n = 0, fail = 0;
@@ -1618,7 +1630,8 @@
       } catch (e) { fail++; }
     }
     closeModal();
-    toast(n ? `${n}개 녹음을 합쳤어요 🛟${fail ? ` (${fail}개 실패)` : ""}` : "이미 다 갖고 있어요 👍");
+    toast(n ? `${n}개 녹음을 합쳤어요 🛟${fail ? ` (${fail}개 실패)` : ""}`
+      : (newName ? `"${newName}" 이름을 넣었어요 💛` : "이미 다 갖고 있어요 👍"));
     track("restore");
     if (homeEl.classList.contains("active")) await renderHome();
     else if (pickEl.classList.contains("active")) await showPick();
