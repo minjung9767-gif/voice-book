@@ -128,7 +128,7 @@
   }
   function setArtMode(v) { try { localStorage.setItem("artMode", ART_MODES[v] ? v : DEFAULT_ART); } catch (e) {} }
   const artModeLabel = (v) => ART_MODES[v] || ART_MODES[DEFAULT_ART];
-  const APP_VERSION = "v64";
+  const APP_VERSION = "v65";
   const STORE_VER = "v2";          // 장면 클립 키에 들어가는 방식 버전
 
   /* 🎁 앱을 다른 부모에게 알려줄 때 보내는 글.
@@ -1160,6 +1160,98 @@
    * 화면이 꺼진 동안 다음 장면 재생을 막아 버린다 → 한 장면만 나오고 멈춘다.
    * 재생기 하나를 계속 쓰고 내용(src)만 갈아끼우면 "아까 사람이 튼 그것"으로 인정돼 이어진다.
    * ⚠️ 다시 `new Audio()` 방식으로 되돌리지 말 것. */
+  /* ===== 틀 때 소리 고르기 (v65, 민정 제보: 책마다 크기가 다르고 어떤 건 한쪽 스피커에서만 나옴) =====
+   * 녹음은 언제·어떤 기기로 했느냐에 따라 크기가 제각각이다(v24는 작게, v42부터는 6배로 키워 담음).
+   * 어떤 마이크는 소리를 '왼쪽 칸'에만 담아서 노트북에서 한쪽 스피커로만 나온다.
+   * → 틀기 직전에 그 장면 소리를 한 번 훑어서
+   *    ① 한 줄(모노)로 합쳐 양쪽 스피커에 똑같이 보내고 ② 크기를 정해진 수준으로 맞춘다.
+   * ⚠️ 저장된 원래 녹음은 절대 바꾸지 않는다. 고른 소리는 메모리에만 잠깐 둔다.
+   * ⚠️ 재생기는 여전히 하나(audioEl)이고 내용(src)만 바꿔 끼운다 → 화면 꺼도 이어지는 방식 그대로.
+   * 고르는 데 실패하거나 너무 오래 걸리면 그냥 원래 녹음을 튼다(손해 없음). */
+  const LEVEL_TARGET = 0.14;     // 목소리 크기 목표 (말하는 구간의 평균 세기)
+  const LEVEL_MAX_GAIN = 8;      // 아주 작은 녹음도 8배까지만 키운다 (더 키우면 방 잡음이 너무 커짐)
+  const LEVEL_PEAK_CAP = 0.97;   // 가장 큰 순간이 이 위로 넘지 않게
+  const LEVEL_MAX_SEC = 240;     // 4분 넘는 긴 녹음(예전 한 통 녹음)은 손대지 않고 그대로 튼다
+  const LEVEL_RATE = 44100;
+  const leveled = new Map();     // key → { createdAt, blob }   (최근 몇 개만)
+  const leveling = new Map();    // key → 만드는 중인 Promise
+  let audioUnlocked = false;     // 재생기가 한 번이라도 소리를 냈나 (아이폰은 첫 재생만 '사람 손'이 필요)
+
+  function decodeBlob(buf) {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    let ctx = null, closeIt = false;
+    try { if (OAC) ctx = new OAC(1, 1, LEVEL_RATE); } catch (e) { ctx = null; }
+    if (!ctx && AC) { ctx = new AC(); closeIt = true; }
+    if (!ctx) return Promise.resolve(null);
+    return new Promise((res, rej) => {
+      const p = ctx.decodeAudioData(buf, res, rej);          // 옛 사파리는 콜백만 받는다
+      if (p && p.then) p.then(res, rej);
+    }).finally(() => { if (closeIt) { try { ctx.close(); } catch (e) {} } });
+  }
+  function encodeWav(samples, rate) {
+    const n = samples.length, out = new DataView(new ArrayBuffer(44 + n * 2));
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) out.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); out.setUint32(4, 36 + n * 2, true); str(8, "WAVE");
+    str(12, "fmt "); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+    out.setUint32(24, rate, true); out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+    str(36, "data"); out.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) { const v = Math.max(-1, Math.min(1, samples[i])); out.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true); }
+    return new Blob([out.buffer], { type: "audio/wav" });
+  }
+  async function buildLeveled(blob) {
+    const audio = await decodeBlob(await blob.arrayBuffer());
+    if (!audio || !audio.length || audio.duration > LEVEL_MAX_SEC) return null;
+    const rate = audio.sampleRate, n = audio.length;
+    /* ① 한 줄로 합치기: 한쪽 칸이 거의 비어 있으면(다른 쪽의 10% 미만) 소리 있는 쪽만 쓴다. */
+    const chans = [];
+    for (let c = 0; c < audio.numberOfChannels; c++) {
+      const d = audio.getChannelData(c); let e = 0;
+      for (let i = 0; i < n; i += 16) e += d[i] * d[i];
+      chans.push({ d, e });
+    }
+    const top = Math.max(...chans.map((c) => c.e));
+    const use = chans.filter((c) => c.e >= top * 0.01);       // 세기 10% = 에너지 1%
+    const mono = new Float32Array(n);
+    for (const c of use) for (let i = 0; i < n; i++) mono[i] += c.d[i] / use.length;
+    /* ② 크기 맞추기: 0.05초씩 잘라 세기를 재고, 말하는 구간(위쪽 10%)의 세기를 목표에 맞춘다. */
+    const win = Math.max(1, Math.floor(rate * 0.05)), rms = [];
+    let peak = 0;
+    for (let s = 0; s < n; s += win) {
+      let sum = 0; const e = Math.min(n, s + win);
+      for (let i = s; i < e; i++) { const v = mono[i]; sum += v * v; const a = v < 0 ? -v : v; if (a > peak) peak = a; }
+      rms.push(Math.sqrt(sum / (e - s)));
+    }
+    rms.sort((a, b) => a - b);
+    const loud = rms[Math.floor(rms.length * 0.9)] || 0;
+    if (loud < 0.0005 || peak <= 0) return null;               // 거의 무음 → 손대지 않는다
+    const gain = Math.min(LEVEL_TARGET / loud, LEVEL_MAX_GAIN, LEVEL_PEAK_CAP / peak);
+    for (let i = 0; i < n; i++) mono[i] *= gain;
+    return encodeWav(mono, rate);
+  }
+  /* 그 장면의 '고른 소리'를 준다. 안 되면 null(→ 원래 녹음을 튼다). */
+  function getLeveled(key, clip) {
+    const hit = leveled.get(key);
+    if (hit && hit.createdAt === clip.createdAt) return Promise.resolve(hit.blob);
+    if (leveling.has(key)) return leveling.get(key);
+    const job = buildLeveled(clip.blob).catch(() => null).then((b) => {
+      leveling.delete(key);
+      if (b) {
+        leveled.set(key, { createdAt: clip.createdAt, blob: b });
+        while (leveled.size > 6) leveled.delete(leveled.keys().next().value);   // 오래된 것부터 비운다
+      }
+      return b;
+    });
+    leveling.set(key, job);
+    return job;
+  }
+  /* 지금 장면이 나오는 동안 다음 장면을 미리 골라 둔다 → 화면이 꺼져 있어도 바로 이어서 튼다. */
+  async function prepareNextLeveled() {
+    if (!pb.story || pb.mode !== "scenes" || pb.scene >= sceneCount(pb.story) - 1) return;
+    const key = sceneKey(pb.story.id, pb.voice, pb.scene + 1);
+    try { const clip = await dbGet(key); if (clip && clip.blob) getLeveled(key, clip); } catch (e) {}
+  }
+
   let audioEl = null;
   function getAudio() {
     if (audioEl) return audioEl;
@@ -1207,15 +1299,20 @@
     try { clip = await dbGet(key); } catch (e) {}
     if (pb.state !== "playing") return;             // 불러오는 사이에 멈췄으면 중단
     if (!clip) { pbAdvance(); return; }             // 혹시 빈 장면이면 건너뜀
+    /* 크기 맞추고 양쪽으로 고른 소리를 쓴다. 아이폰은 맨 처음 재생만 '누른 직후'여야 해서
+     * 첫 재생은 0.7초까지만 기다리고, 그 뒤로는 3초까지 기다린다. 늦으면 원래 녹음. */
+    const lv = await withTimeout(getLeveled(key, clip), audioUnlocked ? 3000 : 700);
+    if (pb.state !== "playing") return;
     const a = getAudio();
     try { a.pause(); } catch (e) {}
     const old = pb.url;
-    pb.url = URL.createObjectURL(clip.blob);
+    pb.url = URL.createObjectURL(lv || clip.blob);
     a.src = pb.url;
     pb.audio = a;
     if (old) URL.revokeObjectURL(old);            // 바꿔 끼운 뒤에 예전 것을 버린다
-    a.play().catch(() => { /* 자동재생이 막히면 조용히 둔다 (화면 탭으로 이어감) */ });
+    a.play().then(() => { audioUnlocked = true; }).catch(() => { /* 자동재생이 막히면 조용히 둔다 (화면 탭으로 이어감) */ });
     setMediaSession();
+    prepareNextLeveled();
   }
   function pbAdvance() {
     if (pb.state !== "playing") return;
